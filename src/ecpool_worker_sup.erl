@@ -37,11 +37,17 @@ init([Pool, Mod, Opts]) ->
     WorkerSpec = fun(Id) ->
         {{worker, Id}, {ecpool_worker, start_link, [Pool, Id, Mod, Opts]},
             transient, 5000, worker, [ecpool_worker, Mod]}
-    end,
+                 end,
     Workers = [WorkerSpec(I) || I <- lists:seq(1, pool_size(Opts))],
-    {ok, { {one_for_one, 10, 60}, Workers} }.
+    {ok, { restart_strategy(Opts), Workers} }.
 
 pool_size(Opts) ->
     Schedulers = erlang:system_info(schedulers),
     proplists:get_value(pool_size, Opts, Schedulers).
+
+restart_strategy(Opts) ->
+    case proplists:get_value(restart_strategy, Opts) of
+        {How, Max, Within} -> {How, Max, Within};
+        _ -> {one_for_one, 1000, 100}
+    end.
 
