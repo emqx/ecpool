@@ -38,7 +38,7 @@
 -record(state, {
           pool :: ecpool:poo_name(),
           id :: pos_integer(),
-          client :: pid(),
+          client :: pid() | undefined,
           mod :: module(),
           on_reconnect :: ecpool:reconn_callback(),
           on_disconnect :: ecpool:reconn_callback(),
