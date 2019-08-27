@@ -110,9 +110,12 @@ init([Pool, Id, Mod, Opts]) ->
         {error, Error} -> {stop, Error}
     end.
 
-handle_call(is_connected, _From, State = #state{client = Client}) ->
+handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
     IsAlive = Client =/= undefined andalso is_process_alive(Client),
     {reply, IsAlive, State};
+
+handle_call(is_connected, _From, State = #state{client = Client}) ->
+    {reply, Client =/= undefined, State};
 
 handle_call(client, _From, State = #state{client = undefined}) ->
     {reply, {error, disconnected}, State};
@@ -138,7 +141,7 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
                 Secs -> reconnect(Secs, State)
             end;
         false ->
-            logger:debug("~p received unexpected exit:~0p from ~p. Supervisees: ~p",
+            logger:debug("~p received unexpected exit:~0p from ~p. Supervisors: ~p",
                          [?MODULE, Reason, Pid, SupPids]),
             {noreply, State}
     end;
@@ -201,7 +204,8 @@ handle_disconnect(_, undefined) ->
 handle_disconnect(Client, Disconnect) ->
     Disconnect(Client).
 
-connect_internal(State) ->
+connect_internal(
+State) ->
     try connect(State) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),

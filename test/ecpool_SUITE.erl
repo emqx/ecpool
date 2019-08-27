@@ -17,26 +17,28 @@
 -module(ecpool_SUITE).
 
 -compile(export_all).
+-compile(nowarn_export_all).
 
 -include_lib("eunit/include/eunit.hrl").
 
 -define(POOL, test_pool).
 
--define(POOL_OPTS, [
-        %% schedulers number
-        {pool_size, 10},
-        %% round-robbin | random | hash
-        {pool_type, random},
-        %% false | pos_integer()
-        {auto_reconnect, false},
+-define(POOL_OPTS,
+        [%% schedulers number
+         {pool_size, 10},
+         %% round-robbin | random | hash
+         {pool_type, random},
+         %% false | pos_integer()
+         {auto_reconnect, false},
 
-        %% DB Parameters
-        {host, "localhost"},
-        {port, 5432},
-        {username, "feng"},
-        {password, ""},
-        {database, "mqtt"},
-        {encoding,  utf8}]).
+         %% DB Parameters
+         {host, "localhost"},
+         {port, 5432},
+         {username, "feng"},
+         {password, ""},
+         {database, "mqtt"},
+         {encoding,  utf8}
+        ]).
 
 all() ->
     [{group, all}].
@@ -46,7 +48,8 @@ groups() ->
       [t_start_pool,
        t_start_sup_pool,
        t_restart_client,
-       t_reconnect_client
+       t_reconnect_client,
+       t_multiprocess_client
       ]}].
 
 init_per_suite(Config) ->
@@ -106,4 +109,15 @@ t_reconnect_client(_Config) ->
     ?assert(lists:member(false, [ecpool_worker:is_connected(Pid) || {_, Pid} <- ecpool:workers(?POOL)])),
     timer:sleep(1100),
     ?assertEqual(4, length(ecpool:workers(?POOL))).
+
+t_multiprocess_client(_Config) ->
+    dbg:start(), dbg:tracer(), dbg:p(all, c),
+    dbg:tpl(ecpool_worker, connect_internal, x),
+    %% dbg:tpl(test_client, connect, x),
+    %% dbg:tpl(gen_server, start_link, x),
+    ecpool:start_pool(?POOL, test_client, [{pool_size, 4}, {auto_reconnect, 1}, {multiprocess, true}
+                                          ]),
+    ?assertEqual(4, length(ecpool:workers(?POOL))),
+    ?assertNot(lists:member(false, [ecpool_worker:is_connected(Pid) || {_, Pid} <- ecpool:workers(?POOL)])).
+    
 
