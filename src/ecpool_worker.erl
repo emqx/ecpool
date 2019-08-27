@@ -141,7 +141,7 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
                 Secs -> reconnect(Secs, State)
             end;
         false ->
-            logger:debug("~p received unexpected exit:~0p from ~p. Supervisors: ~p",
+            logger:debug("~p received unexpected exit:~0p from ~p. Supervisees: ~p",
                          [?MODULE, Reason, Pid, SupPids]),
             {noreply, State}
     end;
@@ -204,8 +204,7 @@ handle_disconnect(_, undefined) ->
 handle_disconnect(Client, Disconnect) ->
     Disconnect(Client).
 
-connect_internal(
-State) ->
+connect_internal(State) ->
     try connect(State) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),

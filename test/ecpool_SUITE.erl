@@ -113,8 +113,6 @@ t_reconnect_client(_Config) ->
 t_multiprocess_client(_Config) ->
     dbg:start(), dbg:tracer(), dbg:p(all, c),
     dbg:tpl(ecpool_worker, connect_internal, x),
-    %% dbg:tpl(test_client, connect, x),
-    %% dbg:tpl(gen_server, start_link, x),
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}, {auto_reconnect, 1}, {multiprocess, true}
                                           ]),
     ?assertEqual(4, length(ecpool:workers(?POOL))),

@@ -37,7 +37,6 @@
 connect(Opts) ->
     case proplists:get_value(multiprocess, Opts, false) of
         true ->
-            %% ModuleName = atom_to_list(?MODULE),
             {ok, Pid1} = gen_server:start_link(?MODULE, [Opts], []),
             {ok, Pid2} = gen_server:start_link(?MODULE, [Opts], []),
             {ok, Pid1, #{supervisees => [Pid2]}};
