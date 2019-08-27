@@ -39,7 +39,7 @@ connect(Opts) ->
         true ->
             {ok, Pid1} = gen_server:start_link(?MODULE, [Opts], []),
             {ok, Pid2} = gen_server:start_link(?MODULE, [Opts], []),
-            {ok, Pid1, #{supervisees => [Pid2]}};
+            {ok, {Pid1, Pid2}, #{supervisees => [Pid1, Pid2]}};
         false ->
             gen_server:start_link(?MODULE, [Opts], [])
     end.
