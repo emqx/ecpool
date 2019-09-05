@@ -135,9 +135,9 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
 
 handle_info(reconnect, State = #state{opts = Opts, on_reconnect = OnReconnect}) ->
     case catch connect(State) of
-        {ok, Client} ->
+        {ok, Client} is_pid(Client) ->
             handle_reconnect(Client, OnReconnect),
-            {noreply, State#state{client = Client}};
+            {noreply, State#state{client = Client, supervisees = [Client]}};
         {{ok, Client}, #{supervisees := SupPids} = _SupOpts} ->
             handle_reconnect(Client, OnReconnect),
             {noreply, State#state{client = Client, supervisees = SupPids}};
