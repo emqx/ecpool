@@ -24,7 +24,7 @@
 
 %% API Function Exports
 -export([ client/1
-        , exec/2
+        , exec/3
         , exec_async/2
         , exec_async/3
         , is_connected/1
@@ -74,9 +74,9 @@ start_link(Pool, Id, Mod, Opts) ->
 client(Pid) ->
     gen_server:call(Pid, client, infinity).
 
--spec(exec(pid(), action()) -> Result :: any() | {error, Reason :: term()}).
-exec(Pid, Action) ->
-    gen_server:call(Pid, {exec, Action}, infinity).
+-spec(exec(pid(), action(), timeout()) -> Result :: any() | {error, Reason :: term()}).
+exec(Pid, Action, Timeout) ->
+    gen_server:call(Pid, {exec, Action}, Timeout).
 
 -spec(exec_async(pid(), action()) -> Result :: any() | {error, Reason :: term()}).
 exec_async(Pid, Action) ->
@@ -142,7 +142,7 @@ handle_call({exec_async, Action}, From, State = #state{client = Client}) ->
 
 handle_call({exec_async, Action, Callback}, From, State = #state{client = Client}) ->
     gen_server:reply(From, ok),
-    _ = Callback(safe_exec(Action, Client)),
+    _ = safe_exec(Callback, safe_exec(Action, Client)),
     {noreply, State};
 
 handle_call(Req, _From, State) ->
@@ -254,11 +254,14 @@ connect_internal(State) ->
         _C:Reason:ST -> {error, {Reason, ST}}
     end.
 
-safe_exec(Action, Client) when is_pid(Client) ->
-    try Action(Client)
+safe_exec(Action, MainArg) ->
+    try exec(Action, MainArg)
     catch E:R:ST ->
-        logger:error("[PoolWorker] safe_exec failed: ~p", [{E,R,ST}]),
+        logger:error("[PoolWorker] safe_exec ~p, failed: ~0p", [Action, {E,R,ST}]),
         {error, {exec_failed, E, R}}
-    end;
-safe_exec(_Action, undefined) ->
-    {error, worker_disconnected}.
+    end.
+
+exec({M, F, A}, MainArg) ->
+    erlang:apply(M, F, [MainArg]++A);
+exec(Action, MainArg) when is_function(Action) ->
+    Action(MainArg).
