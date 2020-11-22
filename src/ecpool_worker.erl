@@ -80,11 +80,11 @@ exec(Pid, Action, Timeout) ->
 
 -spec(exec_async(pid(), action()) -> Result :: any() | {error, Reason :: term()}).
 exec_async(Pid, Action) ->
-    gen_server:call(Pid, {exec_async, Action}).
+    gen_server:cast(Pid, {exec_async, Action}).
 
 -spec(exec_async(pid(), action(), callback()) -> Result :: any() | {error, Reason :: term()}).
 exec_async(Pid, Action, Callback) ->
-    gen_server:call(Pid, {exec_async, Action, Callback}).
+    gen_server:cast(Pid, {exec_async, Action, Callback}).
 
 %% @doc Is client connected?
 -spec(is_connected(pid()) -> boolean()).
@@ -135,19 +135,17 @@ handle_call(client, _From, State = #state{client = Client}) ->
 handle_call({exec, Action}, _From, State = #state{client = Client}) ->
     {reply, safe_exec(Action, Client), State};
 
-handle_call({exec_async, Action}, From, State = #state{client = Client}) ->
-    gen_server:reply(From, ok),
-    _ = safe_exec(Action, Client),
-    {noreply, State};
-
-handle_call({exec_async, Action, Callback}, From, State = #state{client = Client}) ->
-    gen_server:reply(From, ok),
-    _ = safe_exec(Callback, safe_exec(Action, Client)),
-    {noreply, State};
-
 handle_call(Req, _From, State) ->
     logger:error("[PoolWorker] unexpected call: ~p", [Req]),
     {reply, ignored, State}.
+
+handle_cast({exec_async, Action}, State = #state{client = Client}) ->
+    _ = safe_exec(Action, Client),
+    {noreply, State};
+
+handle_cast({exec_async, Action, Callback}, State = #state{client = Client}) ->
+    _ = safe_exec(Callback, safe_exec(Action, Client)),
+    {noreply, State};
 
 handle_cast({set_reconn_callbk, OnReconnect}, State) ->
     {noreply, State#state{on_reconnect = OnReconnect}};

@@ -1,5 +1,5 @@
--type callback() :: fun((any()) -> any()).
--type action() :: fun((pid()) -> any()).
+-type callback() :: mfa() | fun((any()) -> any()).
+-type action() :: mfa() | fun((pid()) -> any()).
 -type apply_mode() :: handover | handover_async
                      | {handover, timeout()}
                      | {handover_async, callback()}
