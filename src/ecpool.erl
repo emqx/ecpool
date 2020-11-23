@@ -68,13 +68,13 @@ get_client(Pool) ->
 get_client(Pool, Key) ->
     gproc_pool:pick_worker(name(Pool), Key).
 
--spec(set_reconnect_callback(atom(), reconn_callback()) -> ok).
+-spec(set_reconnect_callback(atom(), conn_callback()) -> ok).
 set_reconnect_callback(Pool, Callback) ->
     [ecpool_worker:set_reconnect_callback(Worker, Callback)
      || {_WorkerName, Worker} <- ecpool:workers(Pool)],
     ok.
 
--spec(add_reconnect_callback(atom(), reconn_callback()) -> ok).
+-spec(add_reconnect_callback(atom(), conn_callback()) -> ok).
 add_reconnect_callback(Pool, Callback) ->
     [ecpool_worker:add_reconnect_callback(Worker, Callback)
      || {_WorkerName, Worker} <- ecpool:workers(Pool)],

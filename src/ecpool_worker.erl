@@ -29,7 +29,9 @@
         , exec_async/3
         , is_connected/1
         , set_reconnect_callback/2
+        , set_disconnect_callback/2
         , add_reconnect_callback/2
+        , add_disconnect_callback/2
         ]).
 
 %% gen_server Function Exports
@@ -46,8 +48,8 @@
           id :: pos_integer(),
           client :: pid() | undefined,
           mod :: module(),
-          on_reconnect :: ecpool:reconn_callback(),
-          on_disconnect :: ecpool:reconn_callback(),
+          on_reconnect :: ecpool:conn_callback(),
+          on_disconnect :: ecpool:conn_callback(),
           supervisees = [],
           opts :: proplists:proplist()
          }).
@@ -78,11 +80,11 @@ client(Pid) ->
 exec(Pid, Action, Timeout) ->
     gen_server:call(Pid, {exec, Action}, Timeout).
 
--spec(exec_async(pid(), action()) -> Result :: any() | {error, Reason :: term()}).
+-spec exec_async(pid(), action()) -> ok.
 exec_async(Pid, Action) ->
     gen_server:cast(Pid, {exec_async, Action}).
 
--spec(exec_async(pid(), action(), callback()) -> Result :: any() | {error, Reason :: term()}).
+-spec exec_async(pid(), action(), callback()) -> ok.
 exec_async(Pid, Action, Callback) ->
     gen_server:cast(Pid, {exec_async, Action, Callback}).
 
@@ -91,13 +93,21 @@ exec_async(Pid, Action, Callback) ->
 is_connected(Pid) ->
     gen_server:call(Pid, is_connected, infinity).
 
--spec(set_reconnect_callback(pid(), ecpool:reconn_callback()) -> ok).
-set_reconnect_callback(Pid, OnReconnect) ->
+-spec(set_reconnect_callback(pid(), ecpool:conn_callback()) -> ok).
+set_reconnect_callback(Pid, OnReconnect = {_, _, _}) ->
     gen_server:cast(Pid, {set_reconn_callbk, OnReconnect}).
 
--spec(add_reconnect_callback(pid(), ecpool:reconn_callback()) -> ok).
-add_reconnect_callback(Pid, OnReconnect) ->
+-spec(set_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
+set_disconnect_callback(Pid, OnDisconnect = {_, _, _}) ->
+    gen_server:cast(Pid, {set_disconn_callbk, OnDisconnect}).
+
+-spec(add_reconnect_callback(pid(), ecpool:conn_callback()) -> ok).
+add_reconnect_callback(Pid, OnReconnect  = {_, _, _}) ->
     gen_server:cast(Pid, {add_reconn_callbk, OnReconnect}).
+
+-spec(add_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
+add_disconnect_callback(Pid, OnDisconnect = {_, _, _}) ->
+    gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
 
 %%--------------------------------------------------------------------
 %% gen_server callbacks
@@ -109,8 +119,8 @@ init([Pool, Id, Mod, Opts]) ->
                    id   = Id,
                    mod  = Mod,
                    opts = Opts,
-                   on_reconnect = proplists:get_value(on_reconnect, Opts),
-                   on_disconnect = proplists:get_value(on_disconnect, Opts)
+                   on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
+                   on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
                   },
     case connect_internal(State) of
         {ok, NewState} ->
@@ -150,14 +160,14 @@ handle_cast({exec_async, Action, Callback}, State = #state{client = Client}) ->
 handle_cast({set_reconn_callbk, OnReconnect}, State) ->
     {noreply, State#state{on_reconnect = OnReconnect}};
 
-handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OnReconnectList}) when is_list(OnReconnectList) ->
-    {noreply, State#state{on_reconnect = [OnReconnect | OnReconnectList]}};
+handle_cast({set_disconn_callbk, OnDisconnect}, State) ->
+    {noreply, State#state{on_disconnect = OnDisconnect}};
 
-handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = undefined}) ->
-    {noreply, State#state{on_reconnect = [OnReconnect]}};
+handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect}) ->
+    {noreply, State#state{on_reconnect = add_conn_callback(OnReconnect, OldOnReconnect)}};
 
-handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OnReconnect0}) ->
-    {noreply, State#state{on_reconnect = [OnReconnect, OnReconnect0]}};
+handle_cast({add_disconn_callbk, OnDisconnect}, State = #state{on_disconnect = OldOnDisconnect}) ->
+    {noreply, State#state{on_disconnect = add_conn_callback(OnDisconnect, OldOnDisconnect)}};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
@@ -227,16 +237,16 @@ handle_reconnect(_, undefined) ->
 handle_reconnect(undefined, _) ->
     ok;
 handle_reconnect(Client, OnReconnectList) when is_list(OnReconnectList) ->
-    [OnReconnect(Client) || OnReconnect <- OnReconnectList];
+    [safe_exec(OnReconnect, Client) || OnReconnect <- OnReconnectList];
 handle_reconnect(Client, OnReconnect) ->
-    OnReconnect(Client).
+    safe_exec(OnReconnect, Client).
 
 handle_disconnect(undefined, _) ->
     ok;
 handle_disconnect(_, undefined) ->
     ok;
 handle_disconnect(Client, Disconnect) ->
-    Disconnect(Client).
+    safe_exec(Disconnect, Client).
 
 connect_internal(State) ->
     try connect(State) of
@@ -263,3 +273,13 @@ exec({M, F, A}, MainArg) ->
     erlang:apply(M, F, [MainArg]++A);
 exec(Action, MainArg) when is_function(Action) ->
     Action(MainArg).
+
+ensure_callback(undefined) -> undefined;
+ensure_callback({_,_,_} = Callback) -> Callback.
+
+add_conn_callback(OnReconnect, OldOnReconnects) when is_list(OldOnReconnects) ->
+    [OnReconnect | OldOnReconnects];
+add_conn_callback(OnReconnect, undefined) ->
+    [OnReconnect];
+add_conn_callback(OnReconnect, OldOnReconnect) ->
+    [OnReconnect, OldOnReconnect].
