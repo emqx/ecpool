@@ -94,19 +94,19 @@ is_connected(Pid) ->
     gen_server:call(Pid, is_connected, infinity).
 
 -spec(set_reconnect_callback(pid(), ecpool:conn_callback()) -> ok).
-set_reconnect_callback(Pid, OnReconnect = {_, _, _}) ->
+set_reconnect_callback(Pid, OnReconnect) ->
     gen_server:cast(Pid, {set_reconn_callbk, OnReconnect}).
 
 -spec(set_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
-set_disconnect_callback(Pid, OnDisconnect = {_, _, _}) ->
+set_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {set_disconn_callbk, OnDisconnect}).
 
 -spec(add_reconnect_callback(pid(), ecpool:conn_callback()) -> ok).
-add_reconnect_callback(Pid, OnReconnect  = {_, _, _}) ->
+add_reconnect_callback(Pid, OnReconnect) ->
     gen_server:cast(Pid, {add_reconn_callbk, OnReconnect}).
 
 -spec(add_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
-add_disconnect_callback(Pid, OnDisconnect = {_, _, _}) ->
+add_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
 
 %%--------------------------------------------------------------------
@@ -262,12 +262,16 @@ connect_internal(State) ->
         _C:Reason:ST -> {error, {Reason, ST}}
     end.
 
-safe_exec(Action, MainArg) ->
+safe_exec({_M, _F, _A} = Action, MainArg) ->
     try exec(Action, MainArg)
     catch E:R:ST ->
         logger:error("[PoolWorker] safe_exec ~p, failed: ~0p", [Action, {E,R,ST}]),
         {error, {exec_failed, E, R}}
-    end.
+    end;
+
+%% for backward compatibility upgrading from version =< 4.2.1
+safe_exec(Action, MainArg) when is_function(Action) ->
+    Action(MainArg).
 
 exec({M, F, A}, MainArg) ->
     erlang:apply(M, F, [MainArg]++A);
