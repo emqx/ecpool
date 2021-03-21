@@ -20,6 +20,8 @@
 
 -behaviour(gen_server).
 
+-include_lib("eunit/include/eunit.hrl").
+
 -define(SERVER, ?MODULE).
 
 -export([ connect/1
@@ -36,7 +38,19 @@
          code_change/3
         ]).
 
+%% Start a connection OR simulate connection attempts when resource is not yet ready.
 connect(Opts) ->
+    Extra = proplists:get_value(test_client_extra, Opts, []),
+    ErrorUntil = proplists:get_value(error_on_connect_until, Extra),
+    case ErrorUntil of
+        undefined ->
+            intl_connect(Opts);
+        ErrorUntil ->
+            ConAttempts = proplists:get_value(connection_attempts, Opts),
+            handle_error_until( Opts, ErrorUntil, ConAttempts )
+    end.
+
+intl_connect(Opts) ->
     case proplists:get_value(multiprocess, Opts, false) of
         true ->
             {ok, Pid1} = gen_server:start_link(?MODULE, [Opts], []),
@@ -83,3 +97,11 @@ terminate(_Reason, _State) ->
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
+%%-----------------------------------------------------------------------------
+%% Internal
+%%-----------------------------------------------------------------------------
+
+handle_error_until(Opts, ErrorUntil, ConAttempts) when ConAttempts >= ErrorUntil ->
+    intl_connect(Opts);
+handle_error_until(_Opts, ErrorUntil, _ConAttempts) ->
+    { error, { error_on_connect_until, ErrorUntil } }.

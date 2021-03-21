@@ -48,6 +48,9 @@
           id :: pos_integer(),
           client :: pid() | undefined,
           mod :: module(),
+          initiated = false,
+          connection_attempts = 0,
+          start_up_attempts_limit = 1,
           on_reconnect :: ecpool:conn_callback(),
           on_disconnect :: ecpool:conn_callback(),
           supervisees = [],
@@ -119,14 +122,15 @@ init([Pool, Id, Mod, Opts]) ->
                    id   = Id,
                    mod  = Mod,
                    opts = Opts,
+                   start_up_attempts_limit = proplists:get_value(start_up_attempts, Opts, 1),
                    on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
                    on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
                   },
     case connect_internal(State) of
         {ok, NewState} ->
-            gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
             {ok, NewState};
-        {error, Error} -> {stop, Error}
+        {error, {Error, NewState}} ->
+            init_reconnect(NewState, Error)
     end.
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
@@ -187,22 +191,21 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
 
 handle_info(reconnect, State = #state{opts = Opts, on_reconnect = OnReconnect}) ->
      case connect_internal(State) of
-         {ok, NewState = #state{client = Client}}  ->
+         {ok, NewState = #state{client = Client}} ->
              handle_reconnect(Client, OnReconnect),
              {noreply, NewState};
-         {Err, _Reason} when Err =:= error orelse Err =:= 'EXIT'  ->
-             reconnect(proplists:get_value(auto_reconnect, Opts), State)
+         {error, {_Reason, NewState}} ->
+             AutoReconnect = proplists:get_value(auto_reconnect, Opts),
+             reconnect(AutoReconnect, NewState)
      end;
 
 handle_info(Info, State) ->
     logger:error("[PoolWorker] unexpected info: ~p", [Info]),
     {noreply, State}.
 
-terminate(_Reason, #state{pool = Pool, id = Id,
-                          client = Client,
-                          on_disconnect = Disconnect}) ->
+terminate(_Reason, State = #state{client = Client, on_disconnect = Disconnect}) ->
     handle_disconnect(Client, Disconnect),
-    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    disconnect_worker(State).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -211,8 +214,11 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal Functions
 %%--------------------------------------------------------------------
 
-connect(#state{mod = Mod, opts = Opts, id = Id}) ->
-    Mod:connect([{ecpool_worker_id, Id} | connopts(Opts, [])]).
+connect(#state{mod = Mod, opts = Opts, id = Id, initiated = Initiated,
+               connection_attempts = Attempts}) ->
+    ConOpts = [ {ecpool_worker_id, Id}, {initiated, Initiated}, {connection_attempts, Attempts}
+                  | connopts(Opts, [])],
+    Mod:connect(ConOpts).
 
 connopts([], Acc) ->
     Acc;
@@ -226,11 +232,29 @@ connopts([{Key, _}|Opts], Acc)
 connopts([Opt|Opts], Acc) ->
     connopts(Opts, [Opt|Acc]).
 
-reconnect(Secs, State = #state{client = Client, on_disconnect = Disconnect, supervisees = SubPids}) ->
+
+init_reconnect(#state{opts = Opts} = State, Error) ->
+    Secs = proplists:get_value(auto_reconnect, Opts, false),
+    case reconnect(Secs, State) of
+        {stop, AttemptsError} ->
+            ErrorWithCause = {AttemptsError, Error},
+            {stop, ErrorWithCause};
+        {noreply, StateUpdated} ->
+            {ok, StateUpdated}
+    end.
+
+reconnect(_Secs, #state{initiated = false, connection_attempts = Attempts,
+                        start_up_attempts_limit = Limit}) when Attempts >= Limit ->
+    Error = {unable_to_start_up, {start_up_attempts_limit, Attempts}},
+    {stop, Error};
+reconnect(Secs, #state{client = Client, on_disconnect = Disconnect, supervisees = SubPids}=State) ->
     [erlang:unlink(P) || P <- SubPids, is_pid(P)],
     handle_disconnect(Client, Disconnect),
-    erlang:send_after(timer:seconds(Secs), self(), reconnect),
-    {noreply, State#state{client = undefined}}.
+    reconnect_msg(Secs),
+    {noreply, State}.
+
+reconnect_msg(Secs) ->
+    erlang:send_after(timer:seconds(Secs), self(), reconnect).
 
 handle_reconnect(_, undefined) ->
     ok;
@@ -248,19 +272,32 @@ handle_disconnect(_, undefined) ->
 handle_disconnect(Client, Disconnect) ->
     safe_exec(Disconnect, Client).
 
-connect_internal(State) ->
-    try connect(State) of
+connect_internal(#state{connection_attempts = ConAttempts} = State) ->
+    StateUpdated = State#state{connection_attempts = ConAttempts + 1},
+    try connect(StateUpdated) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),
-            {ok, State#state{client = Client, supervisees = [Client]}};
+            {ok, update_connect_state(StateUpdated, Client, [Client])};
         {ok, Client, #{supervisees := SupPids} = _SupOpts} when is_list(SupPids) ->
             [erlang:link(P) || P <- SupPids],
-            {ok, State#state{client = Client, supervisees = SupPids}};
+            {ok, update_connect_state(StateUpdated, Client, SupPids)};
         {error, Error} ->
-            {error, Error}
+            {error, {Error, StateUpdated}}
     catch
-        _C:Reason:ST -> {error, {Reason, ST}}
+        _C:Reason:ST ->
+            Error = {Reason, ST},
+            {error, {Error, StateUpdated}}
     end.
+
+update_connect_state(State, Client, Supervisees) ->
+    StateUpdated = State#state{client = Client, supervisees = Supervisees, initiated = true},
+    update_pool(State#state.initiated, StateUpdated),
+    StateUpdated.
+
+update_pool(false, #state{pool = Pool, id = Id}) ->
+    gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id});
+update_pool(_InitiatedPrev, _State) ->
+    ok.
 
 safe_exec({_M, _F, _A} = Action, MainArg) ->
     try exec(Action, MainArg)
@@ -287,3 +324,8 @@ add_conn_callback(OnReconnect, undefined) ->
     [OnReconnect];
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
+
+disconnect_worker(#state{initiated = true, pool = Pool, id = Id}) ->
+    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id});
+disconnect_worker(_State) ->
+    ok.
