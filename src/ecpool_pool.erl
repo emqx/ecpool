@@ -54,6 +54,7 @@ info(Pid) ->
 %%--------------------------------------------------------------------
 
 init([Pool, Opts]) ->
+    process_flag(trap_exit, true),
     Schedulers = erlang:system_info(schedulers),
     PoolSize = get_value(pool_size, Opts, Schedulers),
     PoolType = get_value(pool_type, Opts, random),
