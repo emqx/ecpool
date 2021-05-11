@@ -93,7 +93,7 @@ with_client(Pool, Fun) when is_atom(Pool) ->
 with_client(Pool, Key, Fun) when is_atom(Pool) ->
     with_worker(gproc_pool:pick_worker(name(Pool), Key), Fun, no_handover).
 
--spec pick_and_do({atom(), term()}, mfa(), apply_mode()) -> any().
+-spec pick_and_do({atom(), term()} | atom(), {module(), atom(), [any()]}, apply_mode()) -> any().
 pick_and_do({Pool, KeyOrNum}, Action = {_,_,_}, ApplyMode) ->
     with_worker(gproc_pool:pick_worker(name(Pool), KeyOrNum), Action, ApplyMode);
 

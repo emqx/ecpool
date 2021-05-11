@@ -59,7 +59,7 @@
 %%--------------------------------------------------------------------
 
 -callback(connect(ConnOpts :: list())
-          -> {ok, pid()} | {error, Reason :: term()}).
+          -> {ok, pid()} | {ok, {pid(), pid()}, map()} | {error, Reason :: term()}).
 
 %%--------------------------------------------------------------------
 %% API
@@ -72,7 +72,7 @@ start_link(Pool, Id, Mod, Opts) ->
     gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []).
 
 %% @doc Get client/connection.
--spec(client(pid()) -> {ok, Client :: pid()} | {error, Reason :: term()}).
+-spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
 client(Pid) ->
     gen_server:call(Pid, client, infinity).
 
