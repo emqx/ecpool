@@ -54,7 +54,8 @@ groups() ->
        t_client_exec_random,
        t_client_exec2_random,
        t_multiprocess_client,
-       t_multiprocess_client_not_restart
+       t_multiprocess_client_not_restart,
+       t_start_pool_reconnect
       ]}].
 
 init_per_suite(Config) ->
@@ -65,6 +66,7 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
     ok = application:stop(ecpool),
     ok = application:stop(gproc).
+
 
 t_start_pool(_Config) ->
     ecpool:start_pool(?POOL, test_client, ?POOL_OPTS),
@@ -214,3 +216,36 @@ t_client_exec2_random(_Config) ->
         {result, 4} -> ok;
         R1 -> ct:fail({unexpected_result, R1})
     end.
+
+
+t_start_pool_reconnect(_Config) ->
+    ecpool:stop_sup_pool(?POOL),
+    
+    Extra = [ { error_on_connect_until, 5 } ],
+    
+    PoolOptsReconnect = [ { start_up_attempts, 5 }, {pool_size, 4}, {auto_reconnect, 1},
+                          { test_client_extra, Extra } ],
+    ecpool:start_pool(?POOL, test_client, PoolOptsReconnect ),
+    
+    [ ?debugFmt("~n ~p: connected :~p", [ Pid, ecpool_worker:is_connected(Pid) ]) || {_, Pid} <- ecpool:workers(?POOL)],
+    WaitFor = 1100,
+    ?assertEqual(0, length(ecpool:workers(?POOL))),
+    timer:sleep(WaitFor),
+    ?assertEqual(0, length(ecpool:workers(?POOL))),
+    timer:sleep(WaitFor),
+    ?assertEqual(0, length(ecpool:workers(?POOL))),
+    timer:sleep(WaitFor),
+    ?assertEqual(0, length(ecpool:workers(?POOL))),
+    timer:sleep(WaitFor),
+    ?assertEqual(4, length(ecpool:workers(?POOL))),
+    
+    ?assertNot(lists:member(false, [ecpool_worker:is_connected(Pid) || {_, Pid} <- ecpool:workers(?POOL)])),
+    [ with_client(I) || I <- lists:seq(1, 10) ],
+    ok.
+
+with_client(I) ->
+    ecpool:with_client(?POOL, fun(Client) ->
+                                Expect = I + 18,
+                                ?assertEqual(Expect, test_client:plus(Client, I, 18) )
+                              end).
+
