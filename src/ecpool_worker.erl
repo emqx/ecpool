@@ -44,7 +44,7 @@
         ]).
 
 -record(state, {
-          pool :: ecpool:poo_name(),
+          pool :: ecpool:pool_name(),
           id :: pos_integer(),
           client :: pid() | undefined,
           mod :: module(),
@@ -274,9 +274,7 @@ safe_exec(Action, MainArg) when is_function(Action) ->
     Action(MainArg).
 
 exec({M, F, A}, MainArg) ->
-    erlang:apply(M, F, [MainArg]++A);
-exec(Action, MainArg) when is_function(Action) ->
-    Action(MainArg).
+    erlang:apply(M, F, [MainArg]++A).
 
 ensure_callback(undefined) -> undefined;
 ensure_callback({_,_,_} = Callback) -> Callback.
