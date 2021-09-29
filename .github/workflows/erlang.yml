@@ -1,0 +1,35 @@
+name: Erlang CI
+
+on:
+  pull_request:
+  push:
+    branches: ['*']
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    container:
+      image: erlang:${{ matrix.otp_release }}
+
+    strategy:
+      matrix:
+        include:
+          - otp_release: 21
+          - otp_release: 22
+          - otp_release: 23
+          - otp_release: 24
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Compile
+      run: make compile
+    - name: Run xref
+      run: make xref
+    - name: Run common tests
+      run: make ct
+    - name: Run cover
+      run: make cover
+    - name: Run dialyzer
+      run: make dialyzer
+
