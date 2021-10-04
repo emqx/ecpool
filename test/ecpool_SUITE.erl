@@ -87,12 +87,17 @@ t_start_sup_pool(_Config) ->
 t_restart_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}]),
     ?assertEqual(4, length(ecpool:workers(?POOL))),
+
     ecpool:with_client(?POOL, fun(Client) -> test_client:stop(Client, normal) end),
+    timer:sleep(50),
     ?debugFmt("~n~p~n", [ecpool:workers(?POOL)]),
     ?assertEqual(3, length(ecpool:workers(?POOL))),
+
     ecpool:with_client(?POOL, fun(Client) -> test_client:stop(Client, {shutdown, x}) end),
+    timer:sleep(50),
     ?debugFmt("~n~p~n", [ecpool:workers(?POOL)]),
     ?assertEqual(2, length(ecpool:workers(?POOL))),
+
     ecpool:with_client(?POOL, fun(Client) ->
                                       test_client:stop(Client, badarg)
                               end),
