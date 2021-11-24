@@ -202,6 +202,21 @@ terminate(_Reason, #state{pool = Pool, id = Id,
                           client = Client,
                           on_disconnect = Disconnect}) ->
     handle_disconnect(Client, Disconnect),
+    %% Kill the client as the client may have hung.
+    %% Note that the ecpool_worker_sup will shutdown this process after 5s, so we have to
+    %% finish the termiation within 5s.
+    %% We here wait 0.3s for the client to exit.
+    %% We use a short timeout value (0.3s) because the ecpool_worker_sup may have many
+    %% workers to be killed, the total time spend by the ecpool_worker_sup will be
+    %% (0.3 * NumOfWorkers) seconds.
+    case kill_client(Client, 300) of
+        ok -> ok;
+        {error, killed} ->
+            logger:warning("[PoolWorker] client ~p is force killed", [Client]);
+        {error, Reason} ->
+            logger:warning("[PoolWorker] client ~p terminated with error: ~p",
+                [Client, Reason])
+    end,
     gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
 
 code_change(_OldVsn, State, _Extra) ->
@@ -285,3 +300,50 @@ add_conn_callback(OnReconnect, undefined) ->
     [OnReconnect];
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
+
+%% the 'kill_client/2' is a copy of 'shutdown/2' in supervsior.erl
+kill_client(Pid, Time) ->
+    case monitor_child(Pid) of
+        ok ->
+            exit(Pid, shutdown), %% Try to shutdown gracefully
+            receive
+                {'DOWN', _MRef, process, Pid, shutdown} ->
+                    ok;
+                {'DOWN', _MRef, process, Pid, OtherReason} ->
+                    {error, OtherReason}
+            after Time ->
+                exit(Pid, kill), %% Force termination.
+                receive
+                    {'DOWN', _MRef, process, Pid, OtherReason} ->
+                        {error, OtherReason}
+                end
+            end;
+        {error, Reason} ->
+            {error, Reason}
+    end.
+
+monitor_child(Pid) ->
+    %% Do the monitor operation first so that if the child dies
+    %% before the monitoring is done causing a 'DOWN'-message with
+    %% reason noproc, we will get the real reason in the 'EXIT'-message
+    %% unless a naughty child has already done unlink...
+    erlang:monitor(process, Pid),
+    unlink(Pid),
+
+    receive
+        %% If the child dies before the unlik we must empty
+        %% the mail-box of the 'EXIT'-message and the 'DOWN'-message.
+        {'EXIT', Pid, Reason} ->
+            receive
+                {'DOWN', _, process, Pid, _} ->
+                    {error, Reason}
+            end
+        after 0 ->
+            %% If a naughty child did unlink and the child dies before
+            %% monitor the result will be that shutdown/2 receives a
+            %% 'DOWN'-message with reason noproc.
+            %% If the child should die after the unlink there
+            %% will be a 'DOWN'-message with a correct reason
+            %% that will be handled in shutdown/2.
+            ok
+    end.
