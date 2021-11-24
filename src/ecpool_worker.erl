@@ -200,23 +200,17 @@ handle_info(Info, State) ->
 
 terminate(_Reason, #state{pool = Pool, id = Id,
                           client = Client,
+                          supervisees = SupPids,
                           on_disconnect = Disconnect}) ->
     handle_disconnect(Client, Disconnect),
-    %% Kill the client as the client may have hung.
+    %% Kill the supervisees as they may have hung.
     %% Note that the ecpool_worker_sup will shutdown this process after 5s, so we have to
     %% finish the termiation within 5s.
-    %% We here wait 0.3s for the client to exit.
+    %% We here wait 0.3s for each supervisee to exit.
     %% We use a short timeout value (0.3s) because the ecpool_worker_sup may have many
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
-    %% (0.3 * NumOfWorkers) seconds.
-    case kill_client(Client, 300) of
-        ok -> ok;
-        {error, killed} ->
-            logger:warning("[PoolWorker] client ~p is force killed", [Client]);
-        {error, Reason} ->
-            logger:warning("[PoolWorker] client ~p terminated with error: ~p",
-                [Client, Reason])
-    end,
+    %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
+    stop_supervisees(SupPids, 300),
     gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
 
 code_change(_OldVsn, State, _Extra) ->
@@ -301,8 +295,21 @@ add_conn_callback(OnReconnect, undefined) ->
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
 
-%% the 'kill_client/2' is a copy of 'shutdown/2' in supervsior.erl
-kill_client(Pid, Time) ->
+stop_supervisees(SubPids, Time) ->
+    lists:foreach(fun(Pid) ->
+        case try_stop_supervisee(Pid, Time) of
+            ok -> ok;
+            {error, Reason} when Reason =:= normal; Reason =:= shutdown -> ok;
+            {error, killed} ->
+                logger:warning("[PoolWorker] supervisee ~p is force killed", [Pid]);
+            {error, Reason} ->
+                logger:warning("[PoolWorker] supervisee ~p terminated with error: ~p",
+                    [Pid, Reason])
+        end
+    end, SubPids).
+
+%% the 'try_stop_supervisee/2' is a copy of 'shutdown/2' in supervsior.erl
+try_stop_supervisee(Pid, Time) ->
     case monitor_child(Pid) of
         ok ->
             exit(Pid, shutdown), %% Try to shutdown gracefully
