@@ -51,7 +51,7 @@ stop_pool(Pool) when is_atom(Pool) ->
     ChildId = child_id(Pool),
 	case supervisor:terminate_child(?MODULE, ChildId) of
         ok ->
-            ok = supervisor:delete_child(?MODULE, ChildId);
+            supervisor:delete_child(?MODULE, ChildId);
         {error, Reason} ->
             {error, Reason}
 	end.
