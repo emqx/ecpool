@@ -1,34 +1,48 @@
 %% -*-: erlang -*-
-{"0.5.2",
+{"0.5.3",
   [
+    {"0.5.2", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.1", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.5.0", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.4.2", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]}
   ],
   [
+    {"0.5.2", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.1", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.5.0", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.4.2", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
+      {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
