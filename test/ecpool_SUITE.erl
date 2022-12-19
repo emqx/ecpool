@@ -47,6 +47,9 @@ groups() ->
     [{all, [sequence],
       [t_start_pool,
        t_start_sup_pool,
+       t_start_good_sup_pool,
+       t_start_bad_sup_pool_1,
+       t_start_bad_sup_pool_2,
        t_restart_client,
        t_reconnect_client,
        t_client_exec_hash,
@@ -82,6 +85,73 @@ t_start_sup_pool(_Config) ->
     ?assertEqual([{xpool, Pid1}, {ypool, Pid2}], lists:sort(ecpool_sup:pools())),
     ecpool:stop_sup_pool(ypool),
     ecpool:stop_sup_pool(xpool),
+    ?assertEqual([], ecpool_sup:pools()).
+
+t_start_good_sup_pool(_Config) ->
+    Succ = fun() ->
+        case rand:uniform(1000) rem 2 of
+            0 -> ok;
+            1 ->
+                %% we'll set the start_worker_timeout to 1s, so should not timeout
+                timer:sleep(300)
+        end,
+        {ok, ecpool_test_client:spawn_dummy_proc()}
+    end,
+    Opts = [
+        {pool_size, 1000},
+        {pool_type, random},
+        {auto_reconnect, false},
+        {start_worker_timeout, 1000},
+        {connect_fun, {Succ, []}}
+    ],
+    {ok, Pid1} = ecpool:start_sup_pool(xpool, ecpool_test_client, Opts),
+    ?assertEqual([{xpool, Pid1}], lists:sort(ecpool_sup:pools())),
+    From = self(),
+    ecpool:with_client(xpool, fun(Client) -> Client ! {echo, {From, hello}} end),
+    receive
+        hello -> ok
+    after
+        1000 ->
+            ct:fail(wait_reply_timeout)
+    end,
+    ok = ecpool:stop_sup_pool(xpool),
+    ?assertEqual([], ecpool_sup:pools()).
+
+t_start_bad_sup_pool_1(_Config) ->
+    RandFail = fun() ->
+        case rand:uniform(1000) rem 3 of
+            0 -> {ok, ecpool_test_client:spawn_dummy_proc()};
+            1 -> throw(connect_failed);
+            2 -> {error, connect_failed}
+        end
+    end,
+    Opts = [
+        {pool_size, 1000},
+        {pool_type, random},
+        {auto_reconnect, false},
+        {start_worker_timeout, 1000},
+        {connect_fun, {RandFail, []}}
+    ],
+    {error, _} = ecpool:start_sup_pool(xpool, ecpool_test_client, Opts),
+    ?assertEqual([], lists:sort(ecpool_sup:pools())),
+    {error, not_found} = ecpool:stop_sup_pool(xpool),
+    ?assertEqual([], ecpool_sup:pools()).
+
+t_start_bad_sup_pool_2(_Config) ->
+    TimeoutFun = fun() ->
+        timer:sleep(1200), %% this will causes ecpool timeout on starting workers
+        {ok, ecpool_test_client:spawn_dummy_proc()}
+    end,
+    Opts = [
+        {pool_size, 1000},
+        {pool_type, random},
+        {auto_reconnect, false},
+        {start_worker_timeout, 1000},
+        {connect_fun, {TimeoutFun, []}}
+    ],
+    {error, _} = ecpool:start_sup_pool(xpool, ecpool_test_client, Opts),
+    ?assertEqual([], lists:sort(ecpool_sup:pools())),
+    {error, not_found} = ecpool:stop_sup_pool(xpool),
     ?assertEqual([], ecpool_sup:pools()).
 
 t_restart_client(_Config) ->
