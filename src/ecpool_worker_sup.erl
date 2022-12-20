@@ -22,24 +22,13 @@
 
 -export([init/1]).
 
--define(START_TIMEOUT, 30000).
-
 start_link(Pool, Mod, Opts) when is_atom(Pool) ->
-    case supervisor:start_link(?MODULE, [Pool, Mod, Opts, self()]) of
-        {ok, Pid} ->
-            case wait_connect_complete(pool_size(Opts), start_worker_timeout(Opts)) of
-                ok -> {ok, Pid};
-                {error, _} = Err ->
-                    exit(Pid, {shutdown, some_workers_failed}),
-                    Err
-            end;
-        {error, _} = Err -> Err
-    end.
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
 
-init([Pool, Mod, Opts, Parent]) ->
+init([Pool, Mod, Opts]) ->
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
-                       start => {ecpool_worker, start_link, [Pool, Id, Mod, Opts, Parent]},
+                       start => {ecpool_worker, start_link, [Pool, Id, Mod, Opts]},
                        restart => transient,
                        shutdown => 5000,
                        type => worker,
@@ -52,26 +41,3 @@ pool_size(Opts) ->
     Schedulers = erlang:system_info(schedulers),
     proplists:get_value(pool_size, Opts, Schedulers).
 
-start_worker_timeout(Opts) ->
-    proplists:get_value(start_worker_timeout, Opts, ?START_TIMEOUT).
-
-wait_connect_complete(PoolSize, Timeout) when PoolSize > 0 ->
-    try
-        Responses = collect_worker_responses(PoolSize, Timeout),
-        case lists:filter(fun(R) -> R =/= connect_complete end, Responses) of
-            [] -> ok;
-            [{error, FirstError} | _] -> {error, FirstError}
-        end
-    catch
-        throw:timeout ->
-            logger:log(error, "[ecpool_worker_sup] wait_connect_complete timeout"),
-            {error, timeout}
-    end.
-
-collect_worker_responses(PoolSize, Timeout) ->
-    [
-        receive {ecpool_worker_reply, Resp} -> Resp
-        after Timeout -> %% the overall timeout waiting for all workers
-            throw(timeout)
-        end || _ <- lists:seq(1, PoolSize)
-    ].
