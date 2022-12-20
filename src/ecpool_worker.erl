@@ -20,9 +20,7 @@
 
 -behaviour(gen_server).
 
--export([ start_link/4
-        , start_link/5
-        ]).
+-export([start_link/4]).
 
 %% API Function Exports
 -export([ client/1
@@ -67,15 +65,11 @@
 %% API
 %%--------------------------------------------------------------------
 
-%% the start_link/4 is kept here only for relup
-start_link(Pool, Id, Mod, Opts) ->
-    start_link(Pool, Id, Mod, Opts, undefined).
-
 %% @doc Start a pool worker.
--spec(start_link(atom(), pos_integer(), module(), list(), pid() | undefined) ->
+-spec(start_link(atom(), pos_integer(), module(), list()) ->
       {ok, pid()} | ignore | {error, any()}).
-start_link(Pool, Id, Mod, Opts, Parent) ->
-    proc_lib:start_link(?MODULE, init, [[Pool, Id, Mod, Opts, Parent]]).
+start_link(Pool, Id, Mod, Opts) ->
+    gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []).
 
 %% @doc Get client/connection.
 -spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
@@ -119,8 +113,7 @@ add_disconnect_callback(Pid, OnDisconnect) ->
 %% gen_server callbacks
 %%--------------------------------------------------------------------
 
-init([Pool, Id, Mod, Opts, Parent]) ->
-    proc_lib:init_ack({ok, self()}),
+init([Pool, Id, Mod, Opts]) ->
     process_flag(trap_exit, true),
     State = #state{pool = Pool,
                    id   = Id,
@@ -129,7 +122,12 @@ init([Pool, Id, Mod, Opts, Parent]) ->
                    on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
                    on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
                   },
-    do_init(Parent, Pool, Id, State).
+    case connect_internal(State) of
+        {ok, NewState} ->
+            gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
+            {ok, NewState};
+        {error, Error} -> {stop, Error}
+    end.
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
     IsAlive = Client =/= undefined andalso is_process_alive(Client),
@@ -221,21 +219,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %% Internal Functions
 %%--------------------------------------------------------------------
-do_init(Parent, Pool, Id, State) ->
-    case connect_internal(State) of
-        {ok, NewState} ->
-            gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
-            maybe_reply_parent(Parent, connect_complete),
-            gen_server:enter_loop(?MODULE, [], NewState);
-        {error, Reason} = Err ->
-            maybe_reply_parent(Parent, Err),
-            exit({shutdown, Reason})
-    end.
-
-maybe_reply_parent(undefined, _Response) ->
-    ok;
-maybe_reply_parent(Parent, Response) ->
-    Parent ! {ecpool_worker_reply, Response}.
 
 connect(#state{mod = Mod, opts = Opts, id = Id}) ->
     Mod:connect([{ecpool_worker_id, Id} | connopts(Opts, [])]).
