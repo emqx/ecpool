@@ -43,8 +43,10 @@
         , code_change/3
         ]).
 
+-type pool_name() :: ecpool:pool_name().
+
 -record(state, {
-          pool :: ecpool:pool_name(),
+          pool :: pool_name(),
           id :: pos_integer(),
           client :: pid() | undefined,
           mod :: module(),
@@ -66,7 +68,7 @@
 %%--------------------------------------------------------------------
 
 %% @doc Start a pool worker.
--spec(start_link(atom(), pos_integer(), module(), list()) ->
+-spec(start_link(pool_name(), pos_integer(), module(), list()) ->
       {ok, pid()} | ignore | {error, any()}).
 start_link(Pool, Id, Mod, Opts) ->
     gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []).

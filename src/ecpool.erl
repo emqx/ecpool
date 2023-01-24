@@ -37,6 +37,11 @@
         , with_client/3
         ]).
 
+-export_type([pool_name/0]).
+
+%% cannot be tuple
+-type pool_name() :: atom() | binary().
+
 pool_spec(ChildId, Pool, Mod, Opts) ->
     #{id => ChildId,
       start => {?MODULE, start_pool, [Pool, Mod, Opts]},
@@ -46,35 +51,35 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
       modules => [ecpool_pool_sup]}.
 
 %% @doc Start the pool sup.
--spec(start_pool(atom(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
-start_pool(Pool, Mod, Opts) when is_atom(Pool) ->
+-spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
+start_pool(Pool, Mod, Opts) ->
     ecpool_pool_sup:start_link(Pool, Mod, Opts).
 
 %% @doc Start the pool supervised by ecpool_sup
-start_sup_pool(Pool, Mod, Opts) when is_atom(Pool) ->
+start_sup_pool(Pool, Mod, Opts) ->
     ecpool_sup:start_pool(Pool, Mod, Opts).
 
 %% @doc Start the pool supervised by ecpool_sup
-stop_sup_pool(Pool) when is_atom(Pool) ->
+stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
 %% @doc Get client/connection
--spec(get_client(atom()) -> pid()).
+-spec(get_client(pool_name()) -> pid()).
 get_client(Pool) ->
     gproc_pool:pick_worker(name(Pool)).
 
 %% @doc Get client/connection with hash key.
--spec(get_client(atom(), any()) -> pid()).
+-spec(get_client(pool_name(), any()) -> pid()).
 get_client(Pool, Key) ->
     gproc_pool:pick_worker(name(Pool), Key).
 
--spec(set_reconnect_callback(atom(), conn_callback()) -> ok).
+-spec(set_reconnect_callback(pool_name(), conn_callback()) -> ok).
 set_reconnect_callback(Pool, Callback) ->
     [ecpool_worker:set_reconnect_callback(Worker, Callback)
      || {_WorkerName, Worker} <- ecpool:workers(Pool)],
     ok.
 
--spec(add_reconnect_callback(atom(), conn_callback()) -> ok).
+-spec(add_reconnect_callback(pool_name(), conn_callback()) -> ok).
 add_reconnect_callback(Pool, Callback) ->
     [ecpool_worker:add_reconnect_callback(Worker, Callback)
      || {_WorkerName, Worker} <- ecpool:workers(Pool)],
@@ -84,19 +89,18 @@ add_reconnect_callback(Pool, Callback) ->
 %%   to avoid applying action failure with 'badfun'.
 %%
 %% @doc Call the fun with client/connection
--spec(with_client(atom(), fun((Client :: pid()) -> any())) -> any()).
-with_client(Pool, Fun) when is_atom(Pool) ->
+-spec(with_client(pool_name(), fun((Client :: pid()) -> any())) -> any()).
+with_client(Pool, Fun) ->
     with_worker(gproc_pool:pick_worker(name(Pool)), Fun, no_handover).
 
 %% @doc Call the fun with client/connection
--spec(with_client(atom(), any(), fun((Client :: pid()) -> term())) -> any()).
-with_client(Pool, Key, Fun) when is_atom(Pool) ->
+-spec(with_client(pool_name(), any(), fun((Client :: pid()) -> term())) -> any()).
+with_client(Pool, Key, Fun) ->
     with_worker(gproc_pool:pick_worker(name(Pool), Key), Fun, no_handover).
 
--spec pick_and_do({atom(), term()} | atom(), {module(), atom(), [any()]}, apply_mode()) -> any().
+-spec pick_and_do({pool_name(), term()} | pool_name(), {module(), atom(), [any()]}, apply_mode()) -> any().
 pick_and_do({Pool, KeyOrNum}, Action = {_,_,_}, ApplyMode) ->
     with_worker(gproc_pool:pick_worker(name(Pool), KeyOrNum), Action, ApplyMode);
-
 pick_and_do(Pool, Action = {_,_,_}, ApplyMode) ->
     with_worker(gproc_pool:pick_worker(name(Pool)), Action, ApplyMode).
 

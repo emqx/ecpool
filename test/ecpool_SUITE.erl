@@ -21,7 +21,7 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
--define(POOL, test_pool).
+-define(POOL, <<"test_pool">>).
 
 -define(POOL_OPTS,
         [%% schedulers number
@@ -68,8 +68,8 @@ end_per_suite(_Config) ->
 
 t_start_pool(_Config) ->
     ecpool:start_pool(?POOL, test_client, ?POOL_OPTS),
-    ?assertEqual(10, length(ecpool:workers(test_pool))),
-    ?debugFmt("~p~n",  [ecpool:workers(test_pool)]),
+    ?assertEqual(10, length(ecpool:workers(?POOL))),
+    ?debugFmt("~p~n",  [ecpool:workers(?POOL)]),
     lists:foreach(fun(I) ->
                       ecpool:with_client(?POOL, fun(Client) ->
                                                         ?debugFmt("Call ~p: ~p~n", [I, Client])
