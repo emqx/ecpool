@@ -31,6 +31,8 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-type pool_name() :: ecpool:pool_name().
+
 %% @doc Start supervisor.
 -spec(start_link() -> {ok, pid()} | {error, term()}).
 start_link() ->
@@ -41,13 +43,13 @@ start_link() ->
 %%--------------------------------------------------------------------
 
 %% @doc Start a pool.
--spec(start_pool(atom(), atom(), list(tuple())) -> {ok, pid()} | {error, term()}).
-start_pool(Pool, Mod, Opts) when is_atom(Pool) ->
+-spec(start_pool(pool_name(), atom(), list(tuple())) -> {ok, pid()} | {error, term()}).
+start_pool(Pool, Mod, Opts) ->
     supervisor:start_child(?MODULE, pool_spec(Pool, Mod, Opts)).
 
 %% @doc Stop a pool.
--spec(stop_pool(Pool :: atom()) -> ok | {error, term()}).
-stop_pool(Pool) when is_atom(Pool) ->
+-spec(stop_pool(Pool :: pool_name()) -> ok | {error, term()}).
+stop_pool(Pool) ->
     ChildId = child_id(Pool),
 	case supervisor:terminate_child(?MODULE, ChildId) of
         ok ->
@@ -57,8 +59,8 @@ stop_pool(Pool) when is_atom(Pool) ->
 	end.
 
 %% @doc Get a pool.
--spec(get_pool(atom()) -> undefined | pid()).
-get_pool(Pool) when is_atom(Pool) ->
+-spec(get_pool(pool_name()) -> undefined | pid()).
+get_pool(Pool) ->
     ChildId = child_id(Pool),
     case [Pid || {Id, Pid, supervisor, _} <- supervisor:which_children(?MODULE), Id =:= ChildId] of
         [] -> undefined;
@@ -66,7 +68,7 @@ get_pool(Pool) when is_atom(Pool) ->
     end.
 
 %% @doc Get All Pools supervisored by the ecpool_sup.
--spec(pools() -> [{atom(), pid()}]).
+-spec(pools() -> [{pool_name(), pid()}]).
 pools() ->
     [{Pool, Pid} || {{pool_sup, Pool}, Pid, supervisor, _}
                     <- supervisor:which_children(?MODULE)].

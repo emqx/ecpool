@@ -6,7 +6,6 @@
     | {handover_async, callback()}
     | no_handover.
 -type pool_type() :: random | hash | direct | round_robin.
--type pool_name() :: term().
 -type conn_callback() :: {module(), atom(), [any()]}.
 -type option() :: {pool_size, pos_integer()}
     | {pool_type, pool_type()}
