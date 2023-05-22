@@ -16,8 +16,6 @@
 
 -module(ecpool_worker).
 
--include("ecpool.hrl").
-
 -behaviour(gen_server).
 
 -export([start_link/4]).
@@ -48,10 +46,10 @@
 -record(state, {
           pool :: pool_name(),
           id :: pos_integer(),
-          client :: pid() | undefined,
+          client :: pid() | {pid(), pid()} | undefined,
           mod :: module(),
-          on_reconnect :: ecpool:conn_callback(),
-          on_disconnect :: ecpool:conn_callback(),
+          on_reconnect :: ecpool:conn_callback() | [ecpool:conn_callback()] | undefined,
+          on_disconnect :: ecpool:conn_callback() | [ecpool:conn_callback()] | undefined,
           supervisees = [],
           opts :: proplists:proplist()
          }).
@@ -78,15 +76,15 @@ start_link(Pool, Id, Mod, Opts) ->
 client(Pid) ->
     gen_server:call(Pid, client, infinity).
 
--spec(exec(pid(), action(), timeout()) -> Result :: any() | {error, Reason :: term()}).
+-spec(exec(pid(), ecpool:action(), timeout()) -> Result :: any() | {error, Reason :: term()}).
 exec(Pid, Action, Timeout) ->
     gen_server:call(Pid, {exec, Action}, Timeout).
 
--spec exec_async(pid(), action()) -> ok.
+-spec exec_async(pid(), ecpool:action()) -> ok.
 exec_async(Pid, Action) ->
     gen_server:cast(Pid, {exec_async, Action}).
 
--spec exec_async(pid(), action(), callback()) -> ok.
+-spec exec_async(pid(), ecpool:action(), ecpool:callback()) -> ok.
 exec_async(Pid, Action, Callback) ->
     gen_server:cast(Pid, {exec_async, Action, Callback}).
 
