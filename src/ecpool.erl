@@ -16,8 +16,6 @@
 
 -module(ecpool).
 
--include("ecpool.hrl").
-
 -export([ pool_spec/4
         , start_pool/3
         , start_sup_pool/3
@@ -37,10 +35,34 @@
         , with_client/3
         ]).
 
--export_type([pool_name/0]).
+-export_type([
+    pool_name/0,
+    callback/0,
+    action/0,
+    apply_mode/0,
+    pool_type/0,
+    conn_callback/0,
+    option/0
+]).
 
 %% cannot be tuple
 -type pool_name() :: atom() | binary().
+
+-type callback() :: {module(), atom(), [any()]} | fun((any()) -> any()).
+-type action() :: {module(), atom(), [any()]} | fun((pid()) -> any()).
+-type apply_mode() :: handover
+    | handover_async
+    | {handover, timeout()}
+    | {handover_async, callback()}
+    | no_handover.
+-type pool_type() :: random | hash | direct | round_robin.
+-type conn_callback() :: {module(), atom(), [any()]}.
+-type option() :: {pool_size, pos_integer()}
+    | {pool_type, pool_type()}
+    | {auto_reconnect, false | pos_integer()}
+    | {on_reconnect, conn_callback()}
+    | {on_disconnect, conn_callback()}
+    | tuple().
 
 pool_spec(ChildId, Pool, Mod, Opts) ->
     #{id => ChildId,
@@ -64,12 +86,12 @@ stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
 %% @doc Get client/connection
--spec(get_client(pool_name()) -> pid()).
+-spec(get_client(pool_name()) -> pid() | false).
 get_client(Pool) ->
     gproc_pool:pick_worker(name(Pool)).
 
 %% @doc Get client/connection with hash key.
--spec(get_client(pool_name(), any()) -> pid()).
+-spec(get_client(pool_name(), any()) -> pid() | false).
 get_client(Pool, Key) ->
     gproc_pool:pick_worker(name(Pool), Key).
 
@@ -91,20 +113,22 @@ add_reconnect_callback(Pool, Callback) ->
 %% @doc Call the fun with client/connection
 -spec(with_client(pool_name(), fun((Client :: pid()) -> any())) -> any()).
 with_client(Pool, Fun) ->
-    with_worker(gproc_pool:pick_worker(name(Pool)), Fun, no_handover).
+    with_worker(get_client(Pool), Fun, no_handover).
 
 %% @doc Call the fun with client/connection
 -spec(with_client(pool_name(), any(), fun((Client :: pid()) -> term())) -> any()).
 with_client(Pool, Key, Fun) ->
-    with_worker(gproc_pool:pick_worker(name(Pool), Key), Fun, no_handover).
+    with_worker(get_client(Pool, Key), Fun, no_handover).
 
 -spec pick_and_do({pool_name(), term()} | pool_name(), {module(), atom(), [any()]}, apply_mode()) -> any().
 pick_and_do({Pool, KeyOrNum}, Action = {_,_,_}, ApplyMode) ->
-    with_worker(gproc_pool:pick_worker(name(Pool), KeyOrNum), Action, ApplyMode);
+    with_worker(get_client(Pool, KeyOrNum), Action, ApplyMode);
 pick_and_do(Pool, Action = {_,_,_}, ApplyMode) ->
-    with_worker(gproc_pool:pick_worker(name(Pool)), Action, ApplyMode).
+    with_worker(get_client(Pool), Action, ApplyMode).
 
--spec with_worker(pid(), action(), apply_mode()) -> any().
+-spec with_worker(pid() | false, action(), apply_mode()) -> any().
+with_worker(false, _Action, _Mode) ->
+    {error, ecpool_empty};
 with_worker(Worker, Action, no_handover) ->
     case ecpool_worker:client(Worker) of
         {ok, Client} -> exec(Action, Client);

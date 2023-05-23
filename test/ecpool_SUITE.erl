@@ -76,6 +76,13 @@ t_start_pool(_Config) ->
                                                 end)
                   end, lists:seq(1, 10)).
 
+t_empty_pool(_Config) ->
+    ecpool:start_pool(?POOL, test_failing_client, ?POOL_OPTS),
+    ?assertEqual([], ecpool:workers(?POOL)),
+    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, fun(_) -> ok end)),
+    ?assertEqual({error, ecpool_empty}, ecpool:with_client({?POOL, 42}, fun(_) -> ok end)),
+    ecpool:stop_pool(?POOL).
+
 t_start_sup_pool(_Config) ->
     {ok, Pid1} = ecpool:start_sup_pool(xpool, test_client, ?POOL_OPTS),
     {ok, Pid2} = ecpool:start_sup_pool(ypool, test_client, ?POOL_OPTS),
