@@ -176,8 +176,8 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
     case lists:member(Pid, SupPids) of
         true ->
             case proplists:get_value(auto_reconnect, Opts, false) of
-                false -> {stop, Reason, State};
-                Secs -> reconnect(Secs, State)
+                false -> {stop, Reason, erase_client(Pid, State)};
+                Secs -> reconnect(Secs, erase_client(Pid, State))
             end;
         false ->
             logger:debug("~p received unexpected exit:~0p from ~p. Supervisees: ~p",
@@ -294,6 +294,11 @@ add_conn_callback(OnReconnect, undefined) ->
     [OnReconnect];
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
+
+erase_client(Pid, State = #state{client = Pid, supervisees = SupPids}) ->
+    State#state{client = undefined, supervisees = SupPids -- [Pid]};
+erase_client(Pid, State = #state{supervisees = SupPids}) ->
+    State#state{supervisees = SupPids -- [Pid]}.
 
 stop_supervisees(SubPids, Time) ->
     lists:foreach(fun(Pid) ->
