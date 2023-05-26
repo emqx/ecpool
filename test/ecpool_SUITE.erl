@@ -47,6 +47,8 @@ groups() ->
     [{all, [sequence],
       [t_start_pool,
        t_start_sup_pool,
+       t_empty_pool,
+       t_empty_hash_pool,
        t_restart_client,
        t_reconnect_client,
        t_client_exec_hash,
@@ -77,11 +79,18 @@ t_start_pool(_Config) ->
                   end, lists:seq(1, 10)).
 
 t_empty_pool(_Config) ->
-    ecpool:start_pool(?POOL, test_failing_client, ?POOL_OPTS),
+    ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, random}]),
+    % NOTE: give some time to clients to exit
+    ok = timer:sleep(100),
     ?assertEqual([], ecpool:workers(?POOL)),
-    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, fun(_) -> ok end)),
-    ?assertEqual({error, ecpool_empty}, ecpool:with_client({?POOL, 42}, fun(_) -> ok end)),
-    ecpool:stop_pool(?POOL).
+    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, fun(_) -> ok end)).
+
+t_empty_hash_pool(_Config) ->
+    ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, hash}]),
+    % NOTE: give some time to clients to exit
+    ok = timer:sleep(100),
+    ?assertEqual([], ecpool:workers(?POOL)),
+    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, 42, fun(_) -> ok end)).
 
 t_start_sup_pool(_Config) ->
     {ok, Pid1} = ecpool:start_sup_pool(xpool, test_client, ?POOL_OPTS),
