@@ -49,7 +49,8 @@
 -type pool_name() :: atom() | binary().
 
 -type callback() :: {module(), atom(), [any()]} | fun((any()) -> any()).
--type action() :: {module(), atom(), [any()]} | fun((pid()) -> any()).
+-type action(Result) :: {module(), atom(), [any()]} | fun((_Client :: pid()) -> Result).
+-type action() :: action(any()).
 -type apply_mode() :: handover
     | handover_async
     | {handover, timeout()}
@@ -111,22 +112,26 @@ add_reconnect_callback(Pool, Callback) ->
 %%   to avoid applying action failure with 'badfun'.
 %%
 %% @doc Call the fun with client/connection
--spec(with_client(pool_name(), fun((Client :: pid()) -> any())) -> any()).
+-spec with_client(pool_name(), action(Result)) ->
+    Result | {error, disconnected | ecpool_empty}.
 with_client(Pool, Fun) ->
     with_worker(get_client(Pool), Fun, no_handover).
 
 %% @doc Call the fun with client/connection
--spec(with_client(pool_name(), any(), fun((Client :: pid()) -> term())) -> any()).
+-spec with_client(pool_name(), any(), action(Result)) ->
+    Result | {error, disconnected | ecpool_empty}.
 with_client(Pool, Key, Fun) ->
     with_worker(get_client(Pool, Key), Fun, no_handover).
 
--spec pick_and_do({pool_name(), term()} | pool_name(), {module(), atom(), [any()]}, apply_mode()) -> any().
+-spec pick_and_do({pool_name(), term()} | pool_name(), action(Result), apply_mode()) ->
+    Result | {error, disconnected | ecpool_empty}.
 pick_and_do({Pool, KeyOrNum}, Action = {_,_,_}, ApplyMode) ->
     with_worker(get_client(Pool, KeyOrNum), Action, ApplyMode);
 pick_and_do(Pool, Action = {_,_,_}, ApplyMode) ->
     with_worker(get_client(Pool), Action, ApplyMode).
 
--spec with_worker(pid() | false, action(), apply_mode()) -> any().
+-spec with_worker(pid() | false, action(Result), apply_mode()) ->
+    Result | {error, disconnected | ecpool_empty}.
 with_worker(false, _Action, _Mode) ->
     {error, ecpool_empty};
 with_worker(Worker, Action, no_handover) ->
