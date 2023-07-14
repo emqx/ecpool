@@ -1,6 +1,9 @@
 %% -*-: erlang -*-
-{"0.5.4",
+{"0.5.5",
   [
+    {"0.5.4", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.3", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []}
@@ -20,6 +23,9 @@
     ]}
   ],
   [
+    {"0.5.4", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.3", [
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []}
