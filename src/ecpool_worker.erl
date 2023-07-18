@@ -176,7 +176,7 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
     case lists:member(Pid, SupPids) of
         true ->
             case proplists:get_value(auto_reconnect, Opts, false) of
-                false -> {stop, Reason, erase_client(Pid, State)};
+                false -> {stop, {shutdown, Reason}, erase_client(Pid, State)};
                 Secs -> reconnect(Secs, erase_client(Pid, State))
             end;
         false ->

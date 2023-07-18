@@ -119,7 +119,7 @@ t_restart_client(_Config) ->
                               end),
     timer:sleep(100),
     ?debugFmt("~n~p~n", [ecpool:workers(?POOL)]),
-    ?assertEqual(2, length(ecpool:workers(?POOL))).
+    ?assertEqual(1, length(ecpool:workers(?POOL))).
 
 t_reconnect_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}, {auto_reconnect, 1}]),
