@@ -65,6 +65,8 @@
     | {on_disconnect, conn_callback()}
     | tuple().
 
+-define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
+
 pool_spec(ChildId, Pool, Mod, Opts) ->
     #{id => ChildId,
       start => {?MODULE, start_pool, [Pool, Mod, Opts]},
@@ -114,38 +116,38 @@ add_reconnect_callback(Pool, Callback) ->
 %% @doc Call the fun with client/connection
 -spec with_client(pool_name(), action(Result)) ->
     Result | {error, disconnected | ecpool_empty}.
-with_client(Pool, Fun) ->
+with_client(Pool, Fun) when ?IS_ACTION(Fun) ->
     with_worker(get_client(Pool), Fun, no_handover).
 
 %% @doc Call the fun with client/connection
 -spec with_client(pool_name(), any(), action(Result)) ->
     Result | {error, disconnected | ecpool_empty}.
-with_client(Pool, Key, Fun) ->
+with_client(Pool, Key, Fun) when ?IS_ACTION(Fun) ->
     with_worker(get_client(Pool, Key), Fun, no_handover).
 
 -spec pick_and_do({pool_name(), term()} | pool_name(), action(Result), apply_mode()) ->
     Result | {error, disconnected | ecpool_empty}.
-pick_and_do({Pool, KeyOrNum}, Action = {_,_,_}, ApplyMode) ->
+pick_and_do({Pool, KeyOrNum}, Action, ApplyMode) when ?IS_ACTION(Action) ->
     with_worker(get_client(Pool, KeyOrNum), Action, ApplyMode);
-pick_and_do(Pool, Action = {_,_,_}, ApplyMode) ->
+pick_and_do(Pool, Action, ApplyMode) when ?IS_ACTION(Action) ->
     with_worker(get_client(Pool), Action, ApplyMode).
 
 -spec with_worker(pid() | false, action(Result), apply_mode()) ->
     Result | {error, disconnected | ecpool_empty}.
-with_worker(false, _Action, _Mode) ->
+with_worker(false, Action, _Mode) when ?IS_ACTION(Action) ->
     {error, ecpool_empty};
-with_worker(Worker, Action, no_handover) ->
+with_worker(Worker, Action, no_handover) when ?IS_ACTION(Action) ->
     case ecpool_worker:client(Worker) of
         {ok, Client} -> exec(Action, Client);
         {error, Reason} -> {error, Reason}
     end;
-with_worker(Worker, Action, handover) ->
+with_worker(Worker, Action, handover) when ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, infinity);
-with_worker(Worker, Action, {handover, Timeout}) when is_integer(Timeout) ->
+with_worker(Worker, Action, {handover, Timeout}) when is_integer(Timeout) andalso ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, Timeout);
-with_worker(Worker, Action, handover_async) ->
+with_worker(Worker, Action, handover_async) when ?IS_ACTION(Action) ->
     ecpool_worker:exec_async(Worker, Action);
-with_worker(Worker, Action, {handover_async, CallbackFun = {_,_,_}}) ->
+with_worker(Worker, Action, {handover_async, CallbackFun = {_,_,_}}) when ?IS_ACTION(Action) ->
     ecpool_worker:exec_async(Worker, Action, CallbackFun).
 
 %% @doc Pool workers

@@ -56,7 +56,8 @@ groups() ->
        t_client_exec_random,
        t_client_exec2_random,
        t_multiprocess_client,
-       t_multiprocess_client_not_restart
+       t_multiprocess_client_not_restart,
+       t_pick_and_do_fun
       ]}].
 
 init_per_suite(Config) ->
@@ -235,3 +236,11 @@ t_client_exec2_random(_Config) ->
         {result, 4} -> ok;
         R1 -> ct:fail({unexpected_result, R1})
     end.
+
+t_pick_and_do_fun(_Config) ->
+    Pool = ?FUNCTION_NAME,
+    Action = fun(Client) -> test_client:plus(Client, 1, 3) end,
+    Opts = [{pool_size, 5}, {pool_type, hash}, {auto_reconnect, false}],
+    {ok, _} = ecpool:start_pool(Pool, test_client, Opts),
+    ?assertEqual(4, ecpool:pick_and_do({Pool, <<"abc">>}, Action, no_handover)),
+    ecpool:stop_sup_pool(Pool).
