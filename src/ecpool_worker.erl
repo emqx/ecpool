@@ -29,6 +29,7 @@
         , set_reconnect_callback/2
         , set_disconnect_callback/2
         , add_reconnect_callback/2
+        , remove_reconnect_callback/2
         , add_disconnect_callback/2
         ]).
 
@@ -105,6 +106,10 @@ set_disconnect_callback(Pid, OnDisconnect) ->
 add_reconnect_callback(Pid, OnReconnect) ->
     gen_server:cast(Pid, {add_reconn_callbk, OnReconnect}).
 
+-spec(remove_reconnect_callback(pid(), {module(), atom()}) -> ok).
+remove_reconnect_callback(Pid, OnReconnect) ->
+    gen_server:cast(Pid, {remove_reconn_callbk, OnReconnect}).
+
 -spec(add_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
 add_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
@@ -165,6 +170,9 @@ handle_cast({set_disconn_callbk, OnDisconnect}, State) ->
 
 handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect}) ->
     {noreply, State#state{on_reconnect = add_conn_callback(OnReconnect, OldOnReconnect)}};
+
+handle_cast({remove_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect}) ->
+    {noreply, State#state{on_reconnect = remove_conn_callback(OnReconnect, OldOnReconnect)}};
 
 handle_cast({add_disconn_callbk, OnDisconnect}, State = #state{on_disconnect = OldOnDisconnect}) ->
     {noreply, State#state{on_disconnect = add_conn_callback(OnDisconnect, OldOnDisconnect)}};
@@ -294,6 +302,9 @@ add_conn_callback(OnReconnect, undefined) ->
     [OnReconnect];
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
+
+remove_conn_callback({Mod, Fn}, Callbacks) ->
+    lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
 
 erase_client(Pid, State = #state{client = Pid, supervisees = SupPids}) ->
     State#state{client = undefined, supervisees = SupPids -- [Pid]};

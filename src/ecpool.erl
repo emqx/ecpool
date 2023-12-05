@@ -27,7 +27,9 @@
         , workers/1
         ]).
 
--export([set_reconnect_callback/2, add_reconnect_callback/2]).
+-export([set_reconnect_callback/2,
+         add_reconnect_callback/2,
+         remove_reconnect_callback/2]).
 
 %% NOTE: Obsolete APIs.
 %% Use pick_and_do/3 APIs instead
@@ -107,6 +109,12 @@ set_reconnect_callback(Pool, Callback) ->
 -spec(add_reconnect_callback(pool_name(), conn_callback()) -> ok).
 add_reconnect_callback(Pool, Callback) ->
     [ecpool_worker:add_reconnect_callback(Worker, Callback)
+     || {_WorkerName, Worker} <- ecpool:workers(Pool)],
+    ok.
+
+-spec(remove_reconnect_callback(pool_name(), {module(), atom()}) -> ok).
+remove_reconnect_callback(Pool, Callback) ->
+    [ecpool_worker:remove_reconnect_callback(Worker, Callback)
      || {_WorkerName, Worker} <- ecpool:workers(Pool)],
     ok.
 
