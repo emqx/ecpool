@@ -303,8 +303,10 @@ add_conn_callback(OnReconnect, undefined) ->
 add_conn_callback(OnReconnect, OldOnReconnect) ->
     [OnReconnect, OldOnReconnect].
 
-remove_conn_callback({Mod, Fn}, Callbacks) ->
-    lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
+remove_conn_callback({Mod, Fn}, Callbacks) when is_list(Callbacks) ->
+    lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks);
+remove_conn_callback(_ModFn, undefined) ->
+    undefined.
 
 erase_client(Pid, State = #state{client = Pid, supervisees = SupPids}) ->
     State#state{client = undefined, supervisees = SupPids -- [Pid]};
