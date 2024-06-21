@@ -24,6 +24,7 @@
         , get_client/2
         , pick_and_do/3
         , name/1
+        , ets_name/1
         , workers/1
         ]).
 
@@ -66,6 +67,7 @@
     | {on_reconnect, conn_callback()}
     | {on_disconnect, conn_callback()}
     | tuple().
+-type get_client_ret() :: pid() | false | no_such_pool.
 
 -define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
 
@@ -91,14 +93,20 @@ stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
 %% @doc Get client/connection
--spec(get_client(pool_name()) -> pid() | false).
+-spec(get_client(pool_name()) -> get_client_ret()).
 get_client(Pool) ->
-    gproc_pool:pick_worker(name(Pool)).
+    try gproc_pool:pick_worker(name(Pool))
+    catch
+        error:badarg -> no_such_pool
+    end.
 
 %% @doc Get client/connection with hash key.
--spec(get_client(pool_name(), any()) -> pid() | false).
+-spec(get_client(pool_name(), any()) -> get_client_ret()).
 get_client(Pool, Key) ->
-    gproc_pool:pick_worker(name(Pool), Key).
+    try gproc_pool:pick_worker(name(Pool), Key)
+    catch
+        error:badarg -> no_such_pool
+    end.
 
 -spec(set_reconnect_callback(pool_name(), conn_callback()) -> ok).
 set_reconnect_callback(Pool, Callback) ->
@@ -125,37 +133,39 @@ remove_reconnect_callback(Pool, Callback) ->
 -spec with_client(pool_name(), action(Result)) ->
     Result | {error, disconnected | ecpool_empty}.
 with_client(Pool, Fun) when ?IS_ACTION(Fun) ->
-    with_worker(get_client(Pool), Fun, no_handover).
+    with_worker(Pool, get_client(Pool), Fun, no_handover).
 
 %% @doc Call the fun with client/connection
 -spec with_client(pool_name(), any(), action(Result)) ->
     Result | {error, disconnected | ecpool_empty}.
 with_client(Pool, Key, Fun) when ?IS_ACTION(Fun) ->
-    with_worker(get_client(Pool, Key), Fun, no_handover).
+    with_worker(Pool, get_client(Pool, Key), Fun, no_handover).
 
 -spec pick_and_do({pool_name(), term()} | pool_name(), action(Result), apply_mode()) ->
     Result | {error, disconnected | ecpool_empty}.
 pick_and_do({Pool, KeyOrNum}, Action, ApplyMode) when ?IS_ACTION(Action) ->
-    with_worker(get_client(Pool, KeyOrNum), Action, ApplyMode);
+    with_worker(Pool, get_client(Pool, KeyOrNum), Action, ApplyMode);
 pick_and_do(Pool, Action, ApplyMode) when ?IS_ACTION(Action) ->
-    with_worker(get_client(Pool), Action, ApplyMode).
+    with_worker(Pool, get_client(Pool), Action, ApplyMode).
 
--spec with_worker(pid() | false, action(Result), apply_mode()) ->
+-spec with_worker(pool_name(), get_client_ret(), action(Result), apply_mode()) ->
     Result | {error, disconnected | ecpool_empty}.
-with_worker(false, Action, _Mode) when ?IS_ACTION(Action) ->
+with_worker(_, no_such_pool, Action, _Mode) when ?IS_ACTION(Action) ->
+    {error, no_such_pool};
+with_worker(_, false, Action, _Mode) when ?IS_ACTION(Action) ->
     {error, ecpool_empty};
-with_worker(Worker, Action, no_handover) when ?IS_ACTION(Action) ->
-    case ecpool_worker:client(Worker) of
+with_worker(Pool, Worker, Action, no_handover) when ?IS_ACTION(Action) ->
+    case ecpool_pool:get_client_global(Pool, Worker) of
         {ok, Client} -> exec(Action, Client);
         {error, Reason} -> {error, Reason}
     end;
-with_worker(Worker, Action, handover) when ?IS_ACTION(Action) ->
+with_worker(_, Worker, Action, handover) when ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, infinity);
-with_worker(Worker, Action, {handover, Timeout}) when is_integer(Timeout) andalso ?IS_ACTION(Action) ->
+with_worker(_, Worker, Action, {handover, Timeout}) when is_integer(Timeout) andalso ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, Timeout);
-with_worker(Worker, Action, handover_async) when ?IS_ACTION(Action) ->
+with_worker(_, Worker, Action, handover_async) when ?IS_ACTION(Action) ->
     ecpool_worker:exec_async(Worker, Action);
-with_worker(Worker, Action, {handover_async, CallbackFun = {_,_,_}}) when ?IS_ACTION(Action) ->
+with_worker(_, Worker, Action, {handover_async, CallbackFun = {_,_,_}}) when ?IS_ACTION(Action) ->
     ecpool_worker:exec_async(Worker, Action, CallbackFun).
 
 %% @doc Pool workers
@@ -164,6 +174,11 @@ workers(Pool) ->
 
 %% @doc ecpool name
 name(Pool) -> {?MODULE, Pool}.
+
+ets_name(Pool) -> list_to_atom("ecpool_" ++ str(Pool)).
+
+str(Pool) when is_atom(Pool) -> atom_to_list(Pool);
+str(Pool) when is_binary(Pool) -> binary_to_list(Pool).
 
 exec({M, F, A}, Client) ->
     erlang:apply(M, F, [Client]++A);
