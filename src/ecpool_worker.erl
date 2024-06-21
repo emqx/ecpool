@@ -247,6 +247,7 @@ reconnect(Secs, State = #state{client = Client, on_disconnect = Disconnect, supe
     [erlang:unlink(P) || P <- SubPids, is_pid(P)],
     handle_disconnect(Client, Disconnect),
     erlang:send_after(timer:seconds(Secs), self(), reconnect),
+    ecpool_pool:reg_client_global(State#state.pool, undefined),
     {noreply, State#state{client = undefined}}.
 
 handle_reconnect(undefined, _) ->
@@ -265,9 +266,11 @@ connect_internal(State) ->
     try connect(State) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),
+            ecpool_pool:reg_client_global(State#state.pool, Client),
             {ok, State#state{client = Client, supervisees = [Client]}};
         {ok, Client, #{supervisees := SupPids} = _SupOpts} when is_list(SupPids) ->
             [erlang:link(P) || P <- SupPids],
+            ecpool_pool:reg_client_global(State#state.pool, Client),
             {ok, State#state{client = Client, supervisees = SupPids}};
         {error, Error} ->
             {error, Error}
@@ -304,6 +307,7 @@ remove_conn_callback({Mod, Fn}, Callbacks) when is_list(Callbacks) ->
     lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
 
 erase_client(Pid, State = #state{client = Pid, supervisees = SupPids}) ->
+    ecpool_pool:reg_client_global(State#state.pool, undefined),
     State#state{client = undefined, supervisees = SupPids -- [Pid]};
 erase_client(Pid, State = #state{supervisees = SupPids}) ->
     State#state{supervisees = SupPids -- [Pid]}.

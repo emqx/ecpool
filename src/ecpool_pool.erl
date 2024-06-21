@@ -21,7 +21,7 @@
 %% API Function Exports
 -export([start_link/2]).
 
--export([info/1]).
+-export([info/1, reg_client_global/2, get_client_global/2]).
 
 %% gen_server Function Exports
 -export([ init/1
@@ -59,11 +59,27 @@ init([Pool, Opts]) ->
     PoolSize = get_value(pool_size, Opts, Schedulers),
     PoolType = get_value(pool_type, Opts, random),
     ok = ensure_pool(ecpool:name(Pool), PoolType, [{size, PoolSize}]),
+    EtsOpts = [named_table, set, public, {read_concurrency, true}],
+    _ = ets:new(ecpool:ets_name(Pool), EtsOpts),
     ok = lists:foreach(
            fun(I) ->
-                   ensure_pool_worker(ecpool:name(Pool), {Pool, I}, I)
+                ensure_pool_worker(ecpool:name(Pool), {Pool, I}, I)
            end, lists:seq(1, PoolSize)),
     {ok, #state{name = Pool, size = PoolSize, type = PoolType}}.
+
+%% register client globally to speed up client lookup
+reg_client_global(Pool, Client) ->
+    ets:insert(ecpool:ets_name(Pool), {self(), Client}),
+    ok.
+
+get_client_global(Pool, Worker) ->
+    try ets:lookup(ecpool:ets_name(Pool), Worker) of
+        [] -> {error, disconnected};
+        [{_, undefined}] -> {error, disconnected};
+        [{_, Client}] -> {ok, Client}
+    catch
+        error:badarg -> {error, disconnected}
+    end.
 
 ensure_pool(Pool, Type, Opts) ->
     try gproc_pool:new(Pool, Type, Opts)
