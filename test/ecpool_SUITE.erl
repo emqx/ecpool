@@ -46,6 +46,7 @@ all() ->
 groups() ->
     [{all, [sequence],
       [t_start_pool,
+       t_start_pool_any_name,
        t_start_sup_pool,
        t_empty_pool,
        t_empty_hash_pool,
@@ -79,6 +80,17 @@ t_start_pool(_Config) ->
                                                 end)
                   end, lists:seq(1, 10)).
 
+t_start_pool_any_name(_Config) ->
+    PoolName = {<<"a">>, b, [#{c => 1}]},
+    {ok, _} = ecpool:start_pool(PoolName, test_client, ?POOL_OPTS),
+    ?assertEqual(10, length(ecpool:workers(PoolName))),
+    lists:foreach(fun(_I) ->
+            ecpool:with_client(PoolName,
+            fun(Client) ->
+                ?assert(is_pid(Client))
+            end)
+        end, lists:seq(1, 10)).
+
 t_empty_pool(_Config) ->
     ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, random}]),
     % NOTE: give some time to clients to exit
@@ -103,7 +115,8 @@ t_start_sup_pool(_Config) ->
 
 t_restart_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}]),
-    ?assertEqual(4, length(ecpool:workers(?POOL))),
+    Workers1 = ecpool:workers(?POOL),
+    ?assertEqual(4, length(Workers1)),
 
     ecpool:with_client(?POOL, fun(Client) -> test_client:stop(Client, normal) end),
     timer:sleep(50),
@@ -115,12 +128,20 @@ t_restart_client(_Config) ->
     ?debugFmt("~n~p~n", [ecpool:workers(?POOL)]),
     ?assertEqual(2, length(ecpool:workers(?POOL))),
 
-    ecpool:with_client(?POOL, fun(Client) ->
-                                      test_client:stop(Client, badarg)
-                              end),
-    timer:sleep(100),
-    ?debugFmt("~n~p~n", [ecpool:workers(?POOL)]),
-    ?assertEqual(1, length(ecpool:workers(?POOL))).
+    ecpool:with_client(?POOL, fun(Client) -> test_client:stop(Client, badarg) end),
+    timer:sleep(50),
+    Workers2 = ecpool:workers(?POOL),
+    ?debugFmt("~n~p~n", [Workers2]),
+    ?assertEqual(1, length(Workers2)),
+
+    lists:foreach(fun({_, WorkerPid}) ->
+            ?assertMatch({ok, _}, ecpool_monitor:get_client_global(WorkerPid))
+        end, Workers2),
+
+    lists:foreach(fun({_, WorkerPid}) ->
+            ?assertMatch({error, ecpool_client_disconnected},
+                ecpool_monitor:get_client_global(WorkerPid))
+        end, Workers1 -- Workers2).
 
 t_reconnect_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}, {auto_reconnect, 1}]),
