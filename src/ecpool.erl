@@ -155,8 +155,13 @@ with_worker(false, Action, _Mode) when ?IS_ACTION(Action) ->
     {error, ecpool_empty};
 with_worker(Worker, Action, no_handover) when ?IS_ACTION(Action) ->
     case ecpool_monitor:get_client_global(Worker) of
-        {ok, Client} -> exec(Action, Client);
-        {error, Reason} -> {error, Reason}
+        {ok, Client} ->
+            exec(Action, Client);
+        {error, _} ->
+            case ecpool_worker:client(Worker) of
+                {ok, Client} -> exec(Action, Client);
+                {error, _} = Err -> Err
+            end
     end;
 with_worker(Worker, Action, handover) when ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, infinity);

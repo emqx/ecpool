@@ -19,8 +19,19 @@
 -behaviour(gen_server).
 
 %% API
--export([start_link/0, ensure_monitor_started/0, monitor_spec/0]).
--export([reg_worker/0, put_client_global/1, get_client_global/1]).
+-export([ start_link/0
+        , ensure_monitor_started/0
+        , ensure_monitor_stopped/0
+        , monitor_spec/0
+        ]).
+
+-export([ update_clients_global/0
+        , reg_worker/0
+        , get_all_global_clients/0
+        , put_client_global/1
+        , put_client_global/2
+        , get_client_global/1
+        ]).
 
 %% gen_server callbacks
 -export([init/1,
@@ -28,7 +39,8 @@
          handle_cast/2,
          handle_info/2,
          terminate/2,
-         code_change/3]).
+         code_change/3
+        ]).
 
 -define(DISCOVERY_TAB, ecpool_global_client_discovery).
 
@@ -42,6 +54,13 @@ ensure_monitor_started() ->
         {error, _} = Error -> Error
     end.
 
+ensure_monitor_stopped() ->
+    case supervisor:terminate_child(ecpool_sup, ecpool_monitor) of
+        ok -> supervisor:delete_child(ecpool_sup, ecpool_monitor);
+        {error, not_found} -> ok;
+        Error -> Error
+    end.
+
 monitor_spec() ->
     #{
         id => ecpool_monitor,
@@ -52,8 +71,24 @@ monitor_spec() ->
         modules => [ecpool_monitor]
     }.
 
+update_clients_global() ->
+    lists:foreach(fun({PoolName, _}) ->
+        lists:foreach(fun({_, WrokerPid}) ->
+                case ecpool_worker:client(WrokerPid) of
+                    {ok, Client} -> put_client_global(WrokerPid, Client);
+                    _ -> ok
+                end
+            end, ecpool:workers(PoolName))
+    end, ecpool_sup:pools()).
+
+get_all_global_clients() ->
+    ets:tab2list(?DISCOVERY_TAB).
+
 put_client_global(Client) ->
-    ets:insert(?DISCOVERY_TAB, {self(), Client}),
+    put_client_global(self(), Client).
+
+put_client_global(WrokerPid, Client) ->
+    ets:insert(?DISCOVERY_TAB, {WrokerPid, Client}),
     ok.
 
 get_client_global(WorkerPid) ->
