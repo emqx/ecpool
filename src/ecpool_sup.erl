@@ -21,7 +21,7 @@
 -export([start_link/0]).
 
 %% API
--export([ start_pool/3
+-export([ start_pool/4
         , stop_pool/1
         , get_pool/1
         ]).
@@ -43,9 +43,9 @@ start_link() ->
 %%--------------------------------------------------------------------
 
 %% @doc Start a pool.
--spec(start_pool(pool_name(), atom(), list(tuple())) -> {ok, pid()} | {error, term()}).
-start_pool(Pool, Mod, Opts) ->
-    supervisor:start_child(?MODULE, pool_spec(Pool, Mod, Opts)).
+-spec(start_pool(pool_name(), atom(), list(tuple()), {pid(), reference()}) -> {ok, pid()} | {error, term()}).
+start_pool(Pool, Mod, Opts, InitialConnectResultReceiver) ->
+    supervisor:start_child(?MODULE, pool_spec(Pool, Mod, Opts, InitialConnectResultReceiver)).
 
 %% @doc Stop a pool.
 -spec(stop_pool(Pool :: pool_name()) -> ok | {error, term()}).
@@ -80,9 +80,9 @@ pools() ->
 init([]) ->
     {ok, {{one_for_one, 10, 100}, [ecpool_monitor:monitor_spec()]}}.
 
-pool_spec(Pool, Mod, Opts) ->
+pool_spec(Pool, Mod, Opts, InitialConnectResultReceiver) ->
     #{id => child_id(Pool),
-      start => {ecpool_pool_sup, start_link, [Pool, Mod, Opts]},
+      start => {ecpool_pool_sup, start_link, [Pool, Mod, Opts, InitialConnectResultReceiver]},
       restart => transient,
       shutdown => infinity,
       type => supervisor,

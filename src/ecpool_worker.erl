@@ -18,7 +18,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/4]).
+-export([start_link/5]).
 
 %% API Function Exports
 -export([ client/1
@@ -67,10 +67,18 @@
 %%--------------------------------------------------------------------
 
 %% @doc Start a pool worker.
--spec(start_link(pool_name(), pos_integer(), module(), list()) ->
+-spec(start_link(pool_name(), pos_integer(), module(), list(), {pid(), reference()}) ->
       {ok, pid()} | ignore | {error, any()}).
-start_link(Pool, Id, Mod, Opts) ->
-    gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []).
+start_link(Pool, Id, Mod, Opts, {InitialConnectResultReceiverPid, Ref}) ->
+    {ok, Pid} = OkResp = gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []),
+    case gen_server:call(Pid, init_connect) of
+        ok ->
+            InitialConnectResultReceiverPid ! {Ref, ok},
+            OkResp;
+        Error ->
+            InitialConnectResultReceiverPid ! {Ref, Error},
+            OkResp
+    end.
 
 %% @doc Get client/connection.
 -spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
@@ -128,12 +136,16 @@ init([Pool, Id, Mod, Opts]) ->
                    on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
                    on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
                   },
+    {ok, State}.
+
+handle_call(init_connect, _From, State = #state{pool = Pool, id = Id}) ->
     case connect_internal(State) of
         {ok, NewState} ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
-            {ok, NewState};
-        {error, Error} -> {stop, Error}
-    end.
+            {reply, ok, NewState};
+        {error, Error} -> 
+            {stop, normal, {error, Error}, State}
+    end;
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
     IsAlive = Client =/= undefined andalso is_process_alive(Client),
@@ -220,7 +232,9 @@ terminate(_Reason, #state{pool = Pool, id = Id,
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
     %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
     stop_supervisees(SupPids, 300),
-    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    %% Ignore the exeception thrown by gproc_pool:disconnect_worker if the name
+    %% is not registered
+    catch gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.

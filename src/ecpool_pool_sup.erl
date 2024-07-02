@@ -19,18 +19,18 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/3]).
+-export([start_link/4]).
 
 %% Supervisor callbacks
 -export([init/1]).
 
-start_link(Pool, Mod, Opts) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
+start_link(Pool, Mod, Opts, InitialConnectResultReceiver) ->
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiver]).
 
-init([Pool, Mod, Opts]) ->
+init([Pool, Mod, Opts, InitialConnectResultReceiver]) ->
     {ok, { {one_for_all, 10, 100}, [
             {pool, {ecpool_pool, start_link, [Pool, Opts]},
                 transient, 16#ffff, worker, [ecpool_pool]},
-            {worker_sup, {ecpool_worker_sup, start_link, [Pool, Mod, Opts]},
+            {worker_sup, {ecpool_worker_sup, start_link, [Pool, Mod, Opts, InitialConnectResultReceiver]},
                 transient, infinity, supervisor, [ecpool_worker_sup]}] }}.
 
