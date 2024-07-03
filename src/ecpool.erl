@@ -88,7 +88,8 @@ start_pool(Pool, Mod, Opts) ->
         ok ->
            OkResponse ;
         Error ->
-            exit(Pid, normal),
+            unlink(Pid),
+            exit(Pid, shutdown),
             Error
     end.
 
