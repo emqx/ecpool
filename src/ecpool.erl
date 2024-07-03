@@ -208,19 +208,23 @@ exec(Action, Client) when is_function(Action) ->
 
 %% Internal functions
 aggregate_initial_connect_responses(InitialConnectResponseRef, Opts) ->
-    lists:foldl(fun(_, ok) ->
-                        receive
-                            {Ref, ok} when Ref =:= InitialConnectResponseRef ->
-                                ok;
-                            {Ref, Error} when Ref =:= InitialConnectResponseRef ->
-                                Error
-                        end;
-                   (_, CurrentRet)  ->
-                        receive
-                            {Ref, _} when Ref =:= InitialConnectResponseRef->
-                                ok
-                        end,
-                        CurrentRet
-                end,
-                ok,
-                lists:seq(1, ecpool_worker_sup:pool_size(Opts))).
+    PoolSize = ecpool_worker_sup:pool_size(Opts),
+    aggregate_initial_connect_responses_helper(PoolSize,
+                                               InitialConnectResponseRef,
+                                               ok).
+
+aggregate_initial_connect_responses_helper(0 = _RespLeft, _RespRef, CurrResp) ->
+    CurrResp;
+aggregate_initial_connect_responses_helper(RespLeft, RespRef, ok = _CurrResp) ->
+    receive
+        {Ref, Resp} when Ref =:= RespRef ->
+            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef, Resp)
+    end;
+aggregate_initial_connect_responses_helper(RespLeft, RespRef, CurrResp) ->
+    receive
+        {Ref, _Resp} when Ref =:= RespRef ->
+            %% We keep the current response if it is something different than ok
+            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef, CurrResp)
+    end.
+
+

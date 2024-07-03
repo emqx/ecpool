@@ -69,16 +69,10 @@
 %% @doc Start a pool worker.
 -spec(start_link(pool_name(), pos_integer(), module(), list(), {pid(), reference()}) ->
       {ok, pid()} | ignore | {error, any()}).
-start_link(Pool, Id, Mod, Opts, {InitialConnectResultReceiverPid, Ref}) ->
-    {ok, Pid} = OkResp = gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []),
-    case gen_server:call(Pid, init_connect) of
-        ok ->
-            InitialConnectResultReceiverPid ! {Ref, ok},
-            OkResp;
-        Error ->
-            InitialConnectResultReceiverPid ! {Ref, Error},
-            OkResp
-    end.
+start_link(Pool, Id, Mod, Opts, InitialConnectResultReceiver) ->
+    gen_server:start_link(?MODULE,
+                          [Pool, Id, Mod, Opts, InitialConnectResultReceiver],
+                          []).
 
 %% @doc Get client/connection.
 -spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
@@ -126,7 +120,7 @@ add_disconnect_callback(Pid, OnDisconnect) ->
 %% gen_server callbacks
 %%--------------------------------------------------------------------
 
-init([Pool, Id, Mod, Opts]) ->
+init([Pool, Id, Mod, Opts, InitialConnectResultReceiver]) ->
     ecpool_monitor:reg_worker(),
     process_flag(trap_exit, true),
     State = #state{pool = Pool,
@@ -136,16 +130,15 @@ init([Pool, Id, Mod, Opts]) ->
                    on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
                    on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
                   },
-    {ok, State}.
-
-handle_call(init_connect, _From, State = #state{pool = Pool, id = Id}) ->
     case connect_internal(State) of
         {ok, NewState} ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
-            {reply, ok, NewState};
-        {error, Error} -> 
-            {stop, normal, {error, Error}, State}
-    end;
+            send_initial_connect_response(InitialConnectResultReceiver, ok),
+            {ok, NewState};
+        Error -> 
+            send_initial_connect_response(InitialConnectResultReceiver, Error),
+            {ok, State}
+    end.
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
     IsAlive = Client =/= undefined andalso is_process_alive(Client),
@@ -386,3 +379,7 @@ monitor_child(Pid) ->
             %% that will be handled in shutdown/2.
             ok
     end.
+
+send_initial_connect_response({InitialConnectResultReceiverPid, Ref}, Response) ->
+    InitialConnectResultReceiverPid ! {Ref, Response},
+    ok.
