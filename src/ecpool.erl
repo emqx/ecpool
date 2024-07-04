@@ -83,8 +83,14 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
 start_pool(Pool, Mod, Opts) ->
     %% See start_sup_pool/3 for an explanation of InitialConnectResponseRef
     InitialConnectResponseRef = make_ref(),
-    {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool, Mod, Opts, {self(), InitialConnectResponseRef}),
-    case aggregate_initial_connect_responses(InitialConnectResponseRef, Opts) of
+    CollectorProcessPID = spawn_initial_connect_result_collector_process(self(),
+                                                                         InitialConnectResponseRef,
+                                                                         Opts),
+    {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool,
+                                                        Mod,
+                                                        Opts,
+                                                        {CollectorProcessPID, InitialConnectResponseRef}),
+    case get_result_from_collector_process(InitialConnectResponseRef) of
         ok ->
            OkResponse ;
         Error ->
@@ -101,8 +107,14 @@ start_sup_pool(Pool, Mod, Opts) ->
     %% attempt, we pass our process ID and a response reference to
     %% ecpool_worker.
     InitialConnectResponseRef = make_ref(),
-    OkResponse = ecpool_sup:start_pool( Pool, Mod, Opts, {self(), InitialConnectResponseRef}),
-    case aggregate_initial_connect_responses(InitialConnectResponseRef, Opts) of
+    CollectorProcessPID = spawn_initial_connect_result_collector_process(self(),
+                                                                         InitialConnectResponseRef,
+                                                                         Opts),
+    OkResponse = ecpool_sup:start_pool(Pool,
+                                       Mod,
+                                       Opts,
+                                       {CollectorProcessPID, InitialConnectResponseRef}),
+    case get_result_from_collector_process(InitialConnectResponseRef) of
         ok ->
            OkResponse;
         Error ->
@@ -208,6 +220,22 @@ exec(Action, Client) when is_function(Action) ->
     Action(Client).
 
 %% Internal functions
+
+%% Since ecpool_workers that are restarted could send more initial connect
+%% response results after the first initialization, we collect responses in a
+%% separte process to not get unhandled messages in the callers mailbox
+spawn_initial_connect_result_collector_process(CallerPid, InitialConnectResponseRef, Opts) ->
+    spawn(fun() ->
+                  Result = aggregate_initial_connect_responses(InitialConnectResponseRef, Opts),
+                  CallerPid ! {InitialConnectResponseRef, Result}
+          end).
+
+get_result_from_collector_process(InitialConnectResponseRef) ->
+    receive
+        {InitialConnectResponseRef, Result} ->
+            Result
+    end.
+
 aggregate_initial_connect_responses(InitialConnectResponseRef, Opts) ->
     PoolSize = ecpool_worker_sup:pool_size(Opts),
     aggregate_initial_connect_responses_helper(PoolSize,

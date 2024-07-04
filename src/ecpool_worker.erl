@@ -137,7 +137,7 @@ init([Pool, Id, Mod, Opts, InitialConnectResultReceiver]) ->
             {ok, NewState};
         Error -> 
             send_initial_connect_response(InitialConnectResultReceiver, Error),
-            {ok, State}
+            ignore
     end.
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
