@@ -96,7 +96,7 @@ t_start_pool_initial_connect_fail(_Config) ->
     ok.
 
 t_start_sup_pool_one_initial_connect_fail(_Config) ->
-    meck:new(test_client),
+    meck:new(test_client, [passthrough]),
     meck:expect(test_client,
                 connect,
                 fun(_Opts) ->
@@ -108,7 +108,7 @@ t_start_sup_pool_one_initial_connect_fail(_Config) ->
     ok.
 
 t_start_pool_one_initial_connect_fail(_Config) ->
-    meck:new(test_client),
+    meck:new(test_client, [passthrough]),
     meck:expect(test_client,
                 connect,
                 fun(_Opts) ->

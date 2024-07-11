@@ -81,22 +81,24 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
 %% @doc Start the pool sup.
 -spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
 start_pool(Pool, Mod, Opts) ->
-    %% See start_sup_pool/3 for an explanation of InitialConnectResponseRef
-    InitialConnectResponseRef = make_ref(),
-    CollectorProcessPID = spawn_initial_connect_result_collector_process(self(),
-                                                                         InitialConnectResponseRef,
-                                                                         Opts),
-    {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool,
-                                                        Mod,
-                                                        Opts,
-                                                        {CollectorProcessPID, InitialConnectResponseRef}),
-    case get_result_from_collector_process(InitialConnectResponseRef) of
-        ok ->
-           OkResponse ;
-        Error ->
-            unlink(Pid),
-            exit(Pid, shutdown),
-            Error
+    %% See start_sup_pool/3 for an explanation of StartProcessAliasID
+    StartProcessAliasID = erlang:alias(),
+    try
+        {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool,
+                                                            Mod,
+                                                            Opts,
+                                                            StartProcessAliasID),
+        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
+            ok ->
+                OkResponse;
+            Error ->
+                unlink(Pid),
+                exit(Pid, shutdown),
+                Error
+        end
+    after
+        erlang:unalias(StartProcessAliasID),
+        flush_initial_connect_response_messages(StartProcessAliasID)
     end.
 
 %% @doc Start the pool supervised by ecpool_sup
@@ -104,22 +106,24 @@ start_sup_pool(Pool, Mod, Opts) ->
     %% To avoid confusing OTP crash report log entries, supervisors and the
     %% gen_server ecpool_worker should never return a non-ok response from the
     %% init function. Instead, to handle errors from the initial connect
-    %% attempt, we pass our process ID and a response reference to
-    %% ecpool_worker.
-    InitialConnectResponseRef = make_ref(),
-    CollectorProcessPID = spawn_initial_connect_result_collector_process(self(),
-                                                                         InitialConnectResponseRef,
-                                                                         Opts),
-    OkResponse = ecpool_sup:start_pool(Pool,
-                                       Mod,
-                                       Opts,
-                                       {CollectorProcessPID, InitialConnectResponseRef}),
-    case get_result_from_collector_process(InitialConnectResponseRef) of
-        ok ->
-           OkResponse;
-        Error ->
-            _ = stop_sup_pool(Pool),
-            Error
+    %% attempt, we pass our process alias ID to the ecpool_worker so the workers
+    %% can send back the errors.
+    StartProcessAliasID = erlang:alias(),
+    try
+        OkResponse = ecpool_sup:start_pool(Pool,
+                                           Mod,
+                                           Opts,
+                                           StartProcessAliasID),
+        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
+            ok ->
+                OkResponse;
+            Error ->
+                _ = stop_sup_pool(Pool),
+                Error
+        end
+    after
+        erlang:unalias(StartProcessAliasID),
+        flush_initial_connect_response_messages(StartProcessAliasID)
     end.
 
 %% @doc Stop the pool supervised by ecpool_sup
@@ -221,39 +225,31 @@ exec(Action, Client) when is_function(Action) ->
 
 %% Internal functions
 
-%% Since ecpool_workers that are restarted could send more initial connect
-%% response results after the first initialization, we collect responses in a
-%% separte process to not get unhandled messages in the callers mailbox
-spawn_initial_connect_result_collector_process(CallerPid, InitialConnectResponseRef, Opts) ->
-    spawn(fun() ->
-                  Result = aggregate_initial_connect_responses(InitialConnectResponseRef, Opts),
-                  CallerPid ! {InitialConnectResponseRef, Result}
-          end).
-
-get_result_from_collector_process(InitialConnectResponseRef) ->
-    receive
-        {InitialConnectResponseRef, Result} ->
-            Result
-    end.
-
-aggregate_initial_connect_responses(InitialConnectResponseRef, Opts) ->
+aggregate_initial_connect_responses(StartProcessAliasID,
+                                    Opts) ->
     PoolSize = ecpool_worker_sup:pool_size(Opts),
     aggregate_initial_connect_responses_helper(PoolSize,
-                                               InitialConnectResponseRef,
-                                               ok).
+                                               StartProcessAliasID).
 
-aggregate_initial_connect_responses_helper(0 = _RespLeft, _RespRef, CurrResp) ->
-    CurrResp;
-aggregate_initial_connect_responses_helper(RespLeft, RespRef, ok = _CurrResp) ->
+aggregate_initial_connect_responses_helper(0 = _RespLeft, _RespRef) ->
+    %% We got an ok response from all workers
+    ok;
+aggregate_initial_connect_responses_helper(RespLeft, RespRef) ->
     receive
-        {Ref, Resp} when Ref =:= RespRef ->
-            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef, Resp)
-    end;
-aggregate_initial_connect_responses_helper(RespLeft, RespRef, CurrResp) ->
+        {Ref, ok} when Ref =:= RespRef ->
+            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef);
+        {Ref, NonOkResp} when Ref =:= RespRef ->
+            NonOkResp
+    end.
+
+%% Called after the receiver process has been unaliased itself to make sure we
+%% remove all messages sent to the alias from the process inbox
+flush_initial_connect_response_messages(RespRef) ->
     receive
         {Ref, _Resp} when Ref =:= RespRef ->
-            %% We keep the current response if it is something different than ok
-            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef, CurrResp)
+            flush_initial_connect_response_messages(RespRef)
+    after 0 ->
+              ok
     end.
 
 

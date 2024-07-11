@@ -24,15 +24,15 @@
 
 -export([pool_size/1]).
 
-start_link(Pool, Mod, Opts, InitialConnectResultReceiver) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiver]).
+start_link(Pool, Mod, Opts, InitialConnectResultReceiverAlias) ->
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiverAlias]).
 
-init([Pool, Mod, Opts, InitialConnectResultReceiver]) ->
+init([Pool, Mod, Opts, InitialConnectResultReceiverAlias]) ->
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
                        start => {ecpool_worker,
                                  start_link,
-                                 [Pool, Id, Mod, Opts, InitialConnectResultReceiver]},
+                                 [Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias]},
                        restart => transient,
                        shutdown => 5000,
                        type => worker,

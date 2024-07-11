@@ -69,9 +69,9 @@
 %% @doc Start a pool worker.
 -spec(start_link(pool_name(), pos_integer(), module(), list(), {pid(), reference()}) ->
       {ok, pid()} | ignore | {error, any()}).
-start_link(Pool, Id, Mod, Opts, InitialConnectResultReceiver) ->
+start_link(Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias) ->
     gen_server:start_link(?MODULE,
-                          [Pool, Id, Mod, Opts, InitialConnectResultReceiver],
+                          [Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias],
                           []).
 
 %% @doc Get client/connection.
@@ -120,7 +120,7 @@ add_disconnect_callback(Pid, OnDisconnect) ->
 %% gen_server callbacks
 %%--------------------------------------------------------------------
 
-init([Pool, Id, Mod, Opts, InitialConnectResultReceiver]) ->
+init([Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias]) ->
     ecpool_monitor:reg_worker(),
     process_flag(trap_exit, true),
     State = #state{pool = Pool,
@@ -133,10 +133,10 @@ init([Pool, Id, Mod, Opts, InitialConnectResultReceiver]) ->
     case connect_internal(State) of
         {ok, NewState} ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
-            send_initial_connect_response(InitialConnectResultReceiver, ok),
+            send_initial_connect_response(InitialConnectResultReceiverAlias, ok),
             {ok, NewState};
         Error -> 
-            send_initial_connect_response(InitialConnectResultReceiver, Error),
+            send_initial_connect_response(InitialConnectResultReceiverAlias, Error),
             ignore
     end.
 
@@ -380,6 +380,6 @@ monitor_child(Pid) ->
             ok
     end.
 
-send_initial_connect_response({InitialConnectResultReceiverPid, Ref}, Response) ->
-    InitialConnectResultReceiverPid ! {Ref, Response},
+send_initial_connect_response(InitialConnectResultReceiverAlias, Response) ->
+    InitialConnectResultReceiverAlias ! {InitialConnectResultReceiverAlias, Response},
     ok.

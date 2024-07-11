@@ -24,13 +24,18 @@
 %% Supervisor callbacks
 -export([init/1]).
 
-start_link(Pool, Mod, Opts, InitialConnectResultReceiver) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiver]).
+start_link(Pool, Mod, Opts, InitialConnectResultReceiverAlias) ->
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiverAlias]).
 
-init([Pool, Mod, Opts, InitialConnectResultReceiver]) ->
+init([Pool, Mod, Opts, InitialConnectResultReceiverAlias]) ->
     {ok, { {one_for_all, 10, 100}, [
             {pool, {ecpool_pool, start_link, [Pool, Opts]},
                 transient, 16#ffff, worker, [ecpool_pool]},
-            {worker_sup, {ecpool_worker_sup, start_link, [Pool, Mod, Opts, InitialConnectResultReceiver]},
-                transient, infinity, supervisor, [ecpool_worker_sup]}] }}.
+            {worker_sup,
+             {ecpool_worker_sup,start_link,
+              [Pool, Mod, Opts, InitialConnectResultReceiverAlias]},
+             transient,
+             infinity,
+             supervisor,
+             [ecpool_worker_sup]}] }}.
 
