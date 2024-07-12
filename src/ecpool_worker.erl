@@ -18,7 +18,7 @@
 
 -behaviour(gen_server).
 
--export([start_link/4]).
+-export([start_link/5]).
 
 %% API Function Exports
 -export([ client/1
@@ -67,10 +67,12 @@
 %%--------------------------------------------------------------------
 
 %% @doc Start a pool worker.
--spec(start_link(pool_name(), pos_integer(), module(), list()) ->
+-spec(start_link(pool_name(), pos_integer(), module(), list(), {pid(), reference()}) ->
       {ok, pid()} | ignore | {error, any()}).
-start_link(Pool, Id, Mod, Opts) ->
-    gen_server:start_link(?MODULE, [Pool, Id, Mod, Opts], []).
+start_link(Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias) ->
+    gen_server:start_link(?MODULE,
+                          [Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias],
+                          []).
 
 %% @doc Get client/connection.
 -spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
@@ -118,7 +120,7 @@ add_disconnect_callback(Pid, OnDisconnect) ->
 %% gen_server callbacks
 %%--------------------------------------------------------------------
 
-init([Pool, Id, Mod, Opts]) ->
+init([Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias]) ->
     ecpool_monitor:reg_worker(),
     process_flag(trap_exit, true),
     State = #state{pool = Pool,
@@ -131,8 +133,11 @@ init([Pool, Id, Mod, Opts]) ->
     case connect_internal(State) of
         {ok, NewState} ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
+            send_initial_connect_response(InitialConnectResultReceiverAlias, ok),
             {ok, NewState};
-        {error, Error} -> {stop, Error}
+        Error -> 
+            send_initial_connect_response(InitialConnectResultReceiverAlias, Error),
+            ignore
     end.
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
@@ -220,7 +225,9 @@ terminate(_Reason, #state{pool = Pool, id = Id,
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
     %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
     stop_supervisees(SupPids, 300),
-    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    %% Ignore the exeception thrown by gproc_pool:disconnect_worker if the name
+    %% is not registered
+    catch gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -372,3 +379,7 @@ monitor_child(Pid) ->
             %% that will be handled in shutdown/2.
             ok
     end.
+
+send_initial_connect_response(InitialConnectResultReceiverAlias, Response) ->
+    InitialConnectResultReceiverAlias ! {InitialConnectResultReceiverAlias, Response},
+    ok.

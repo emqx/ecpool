@@ -81,13 +81,52 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
 %% @doc Start the pool sup.
 -spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
 start_pool(Pool, Mod, Opts) ->
-    ecpool_pool_sup:start_link(Pool, Mod, Opts).
+    %% See start_sup_pool/3 for an explanation of StartProcessAliasID
+    StartProcessAliasID = erlang:alias(),
+    try
+        {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool,
+                                                            Mod,
+                                                            Opts,
+                                                            StartProcessAliasID),
+        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
+            ok ->
+                OkResponse;
+            Error ->
+                unlink(Pid),
+                exit(Pid, shutdown),
+                Error
+        end
+    after
+        erlang:unalias(StartProcessAliasID),
+        flush_initial_connect_response_messages(StartProcessAliasID)
+    end.
 
 %% @doc Start the pool supervised by ecpool_sup
 start_sup_pool(Pool, Mod, Opts) ->
-    ecpool_sup:start_pool(Pool, Mod, Opts).
+    %% To avoid confusing OTP crash report log entries, supervisors and the
+    %% gen_server ecpool_worker should never return a non-ok response from the
+    %% init function. Instead, to handle errors from the initial connect
+    %% attempt, we pass our process alias ID to the ecpool_worker so the workers
+    %% can send back the errors.
+    StartProcessAliasID = erlang:alias(),
+    try
+        OkResponse = ecpool_sup:start_pool(Pool,
+                                           Mod,
+                                           Opts,
+                                           StartProcessAliasID),
+        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
+            ok ->
+                OkResponse;
+            Error ->
+                _ = stop_sup_pool(Pool),
+                Error
+        end
+    after
+        erlang:unalias(StartProcessAliasID),
+        flush_initial_connect_response_messages(StartProcessAliasID)
+    end.
 
-%% @doc Start the pool supervised by ecpool_sup
+%% @doc Stop the pool supervised by ecpool_sup
 stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
@@ -183,3 +222,34 @@ exec({M, F, A}, Client) ->
     erlang:apply(M, F, [Client]++A);
 exec(Action, Client) when is_function(Action) ->
     Action(Client).
+
+%% Internal functions
+
+aggregate_initial_connect_responses(StartProcessAliasID,
+                                    Opts) ->
+    PoolSize = ecpool_worker_sup:pool_size(Opts),
+    aggregate_initial_connect_responses_helper(PoolSize,
+                                               StartProcessAliasID).
+
+aggregate_initial_connect_responses_helper(0 = _RespLeft, _RespRef) ->
+    %% We got an ok response from all workers
+    ok;
+aggregate_initial_connect_responses_helper(RespLeft, RespRef) ->
+    receive
+        {Ref, ok} when Ref =:= RespRef ->
+            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef);
+        {Ref, NonOkResp} when Ref =:= RespRef ->
+            NonOkResp
+    end.
+
+%% Called after the receiver process has been unaliased itself to make sure we
+%% remove all messages sent to the alias from the process inbox
+flush_initial_connect_response_messages(RespRef) ->
+    receive
+        {Ref, _Resp} when Ref =:= RespRef ->
+            flush_initial_connect_response_messages(RespRef)
+    after 0 ->
+              ok
+    end.
+
+

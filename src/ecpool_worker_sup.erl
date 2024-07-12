@@ -18,17 +18,21 @@
 
 -behaviour(supervisor).
 
--export([start_link/3]).
+-export([start_link/4]).
 
 -export([init/1]).
 
-start_link(Pool, Mod, Opts) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
+-export([pool_size/1]).
 
-init([Pool, Mod, Opts]) ->
+start_link(Pool, Mod, Opts, InitialConnectResultReceiverAlias) ->
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiverAlias]).
+
+init([Pool, Mod, Opts, InitialConnectResultReceiverAlias]) ->
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
-                       start => {ecpool_worker, start_link, [Pool, Id, Mod, Opts]},
+                       start => {ecpool_worker,
+                                 start_link,
+                                 [Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias]},
                        restart => transient,
                        shutdown => 5000,
                        type => worker,
