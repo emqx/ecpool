@@ -61,7 +61,7 @@ init([Pool, Opts]) ->
     ok = ensure_pool(ecpool:name(Pool), PoolType, [{size, PoolSize}]),
     ok = lists:foreach(
            fun(I) ->
-                   ensure_pool_worker(ecpool:name(Pool), {Pool, I}, I)
+                ensure_pool_worker(ecpool:name(Pool), {Pool, I}, I)
            end, lists:seq(1, PoolSize)),
     {ok, #state{name = Pool, size = PoolSize, type = PoolType}}.
 
@@ -99,9 +99,9 @@ handle_info(Info, State) ->
 
 terminate(_Reason, #state{name = Pool, size = Size}) ->
     lists:foreach(
-      fun(I) ->
-              gproc_pool:remove_worker(ecpool:name(Pool), {Pool, I})
-      end, lists:seq(1, Size)),
+        fun(I) ->
+            gproc_pool:remove_worker(ecpool:name(Pool), {Pool, I})
+        end, lists:seq(1, Size)),
     gproc_pool:delete(ecpool:name(Pool)).
 
 code_change(_OldVsn, State, _Extra) ->

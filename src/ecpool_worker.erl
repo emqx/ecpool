@@ -49,8 +49,8 @@
           id :: pos_integer(),
           client :: pid() | {pid(), pid()} | undefined,
           mod :: module(),
-          on_reconnect :: ecpool:conn_callback() | [ecpool:conn_callback()] | undefined,
-          on_disconnect :: ecpool:conn_callback() | [ecpool:conn_callback()] | undefined,
+          on_reconnect :: [ecpool:conn_callback()],
+          on_disconnect :: [ecpool:conn_callback()],
           supervisees = [],
           opts :: proplists:proplist()
          }).
@@ -119,6 +119,7 @@ add_disconnect_callback(Pid, OnDisconnect) ->
 %%--------------------------------------------------------------------
 
 init([Pool, Id, Mod, Opts]) ->
+    ecpool_monitor:reg_worker(),
     process_flag(trap_exit, true),
     State = #state{pool = Pool,
                    id   = Id,
@@ -163,10 +164,10 @@ handle_cast({exec_async, Action, Callback}, State = #state{client = Client}) ->
     {noreply, State};
 
 handle_cast({set_reconn_callbk, OnReconnect}, State) ->
-    {noreply, State#state{on_reconnect = OnReconnect}};
+    {noreply, State#state{on_reconnect = ensure_callback(OnReconnect)}};
 
 handle_cast({set_disconn_callbk, OnDisconnect}, State) ->
-    {noreply, State#state{on_disconnect = OnDisconnect}};
+    {noreply, State#state{on_disconnect = ensure_callback(OnDisconnect)}};
 
 handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect0}) ->
     OldOnReconnect =
@@ -211,7 +212,7 @@ handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = Sup
 handle_info(reconnect, State = #state{opts = Opts, on_reconnect = OnReconnect}) ->
      case connect_internal(State) of
          {ok, NewState = #state{client = Client}}  ->
-             handle_reconnect(Client, OnReconnect),
+             _ = handle_reconnect(Client, OnReconnect),
              {noreply, NewState};
          {Err, _Reason} when Err =:= error orelse Err =:= 'EXIT'  ->
              reconnect(proplists:get_value(auto_reconnect, Opts), State)
@@ -262,31 +263,30 @@ reconnect(Secs, State = #state{client = Client, on_disconnect = Disconnect, supe
     [erlang:unlink(P) || P <- SubPids, is_pid(P)],
     handle_disconnect(Client, Disconnect),
     erlang:send_after(timer:seconds(Secs), self(), reconnect),
+    ecpool_monitor:put_client_global(undefined),
     {noreply, State#state{client = undefined}}.
 
-handle_reconnect(_, undefined) ->
-    ok;
 handle_reconnect(undefined, _) ->
     ok;
 handle_reconnect(Client, OnReconnectList) when is_list(OnReconnectList) ->
-    [safe_exec(OnReconnect, Client) || OnReconnect <- OnReconnectList];
-handle_reconnect(Client, OnReconnect) ->
-    safe_exec(OnReconnect, Client).
+    lists:foreach(fun(OnReconnectCallback) -> safe_exec(OnReconnectCallback, Client) end,
+                  OnReconnectList).
 
 handle_disconnect(undefined, _) ->
     ok;
-handle_disconnect(_, undefined) ->
-    ok;
-handle_disconnect(Client, Disconnect) ->
-    safe_exec(Disconnect, Client).
+handle_disconnect(Client, OnDisconnectList) ->
+    lists:foreach(fun(OnDisconnectCallback) -> safe_exec(OnDisconnectCallback, Client) end,
+                  OnDisconnectList).
 
 connect_internal(State) ->
     try connect(State) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),
+            ecpool_monitor:put_client_global(Client),
             {ok, State#state{client = Client, supervisees = [Client]}};
         {ok, Client, #{supervisees := SupPids} = _SupOpts} when is_list(SupPids) ->
             [erlang:link(P) || P <- SupPids],
+            ecpool_monitor:put_client_global(Client),
             {ok, State#state{client = Client, supervisees = SupPids}};
         {error, Error} ->
             {error, Error}
@@ -319,18 +319,22 @@ safe_exec(Action, MainArg) when is_function(Action) ->
 exec({M, F, A}, MainArg) ->
     erlang:apply(M, F, [MainArg]++A).
 
-ensure_callback(undefined) -> undefined;
-ensure_callback({_,_,_} = Callback) -> Callback.
+ensure_callback(undefined) ->
+    [];
+ensure_callback({_,_,_} = Callback) ->
+    [Callback];
+ensure_callback(Callbacks) when is_list(Callbacks) ->
+    %% assert
+    lists:map(fun({_, _, _} = Callback) -> Callback end, Callbacks).
 
 add_conn_callback(OnReconnect, OldOnReconnects) when is_list(OldOnReconnects) ->
-    OldOnReconnects ++ [OnReconnect];
-add_conn_callback(OnReconnect, undefined) ->
-    [OnReconnect].
+    OldOnReconnects ++ [OnReconnect].
 
-remove_conn_callback({Mod, Fn}, Callbacks) ->
+remove_conn_callback({Mod, Fn}, Callbacks) when is_list(Callbacks) ->
     lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
 
 erase_client(Pid, State = #state{client = Pid, supervisees = SupPids}) ->
+    ecpool_monitor:put_client_global(undefined),
     State#state{client = undefined, supervisees = SupPids -- [Pid]};
 erase_client(Pid, State = #state{supervisees = SupPids}) ->
     State#state{supervisees = SupPids -- [Pid]}.

@@ -78,7 +78,7 @@ pools() ->
 %%--------------------------------------------------------------------
 
 init([]) ->
-    {ok, { {one_for_one, 10, 100}, []} }.
+    {ok, {{one_for_one, 10, 100}, [ecpool_monitor:monitor_spec()]}}.
 
 pool_spec(Pool, Mod, Opts) ->
     #{id => child_id(Pool),

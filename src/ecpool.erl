@@ -66,6 +66,7 @@
     | {on_reconnect, conn_callback()}
     | {on_disconnect, conn_callback()}
     | tuple().
+-type get_client_ret() :: pid() | false | no_such_pool.
 
 -define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
 
@@ -91,14 +92,20 @@ stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
 %% @doc Get client/connection
--spec(get_client(pool_name()) -> pid() | false).
+-spec(get_client(pool_name()) -> get_client_ret()).
 get_client(Pool) ->
-    gproc_pool:pick_worker(name(Pool)).
+    try gproc_pool:pick_worker(name(Pool))
+    catch
+        error:badarg -> no_such_pool
+    end.
 
 %% @doc Get client/connection with hash key.
--spec(get_client(pool_name(), any()) -> pid() | false).
+-spec(get_client(pool_name(), any()) -> get_client_ret()).
 get_client(Pool, Key) ->
-    gproc_pool:pick_worker(name(Pool), Key).
+    try gproc_pool:pick_worker(name(Pool), Key)
+    catch
+        error:badarg -> no_such_pool
+    end.
 
 -spec(set_reconnect_callback(pool_name(), conn_callback()) -> ok).
 set_reconnect_callback(Pool, Callback) ->
@@ -140,14 +147,21 @@ pick_and_do({Pool, KeyOrNum}, Action, ApplyMode) when ?IS_ACTION(Action) ->
 pick_and_do(Pool, Action, ApplyMode) when ?IS_ACTION(Action) ->
     with_worker(get_client(Pool), Action, ApplyMode).
 
--spec with_worker(pid() | false, action(Result), apply_mode()) ->
+-spec with_worker(get_client_ret(), action(Result), apply_mode()) ->
     Result | {error, disconnected | ecpool_empty}.
+with_worker(no_such_pool, Action, _Mode) when ?IS_ACTION(Action) ->
+    {error, no_such_pool};
 with_worker(false, Action, _Mode) when ?IS_ACTION(Action) ->
     {error, ecpool_empty};
 with_worker(Worker, Action, no_handover) when ?IS_ACTION(Action) ->
-    case ecpool_worker:client(Worker) of
-        {ok, Client} -> exec(Action, Client);
-        {error, Reason} -> {error, Reason}
+    case ecpool_monitor:get_client_global(Worker) of
+        {ok, Client} ->
+            exec(Action, Client);
+        {error, _} ->
+            case ecpool_worker:client(Worker) of
+                {ok, Client} -> exec(Action, Client);
+                {error, _} = Err -> Err
+            end
     end;
 with_worker(Worker, Action, handover) when ?IS_ACTION(Action) ->
     ecpool_worker:exec(Worker, Action, infinity);
