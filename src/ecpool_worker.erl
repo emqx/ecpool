@@ -168,7 +168,22 @@ handle_cast({set_reconn_callbk, OnReconnect}, State) ->
 handle_cast({set_disconn_callbk, OnDisconnect}, State) ->
     {noreply, State#state{on_disconnect = OnDisconnect}};
 
-handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect}) ->
+handle_cast({add_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect0}) ->
+    OldOnReconnect =
+        case reconnect_callback_signature(OnReconnect) of
+            {ok, S1} ->
+                lists:filter(
+                    fun(CB) ->
+                            case reconnect_callback_signature(CB) of
+                                {ok, S2} when S1 =:= S2 ->
+                                    false;
+                                _ ->
+                                    true
+                            end
+                    end, OldOnReconnect0);
+            error ->
+                OldOnReconnect0
+        end,
     {noreply, State#state{on_reconnect = add_conn_callback(OnReconnect, OldOnReconnect)}};
 
 handle_cast({remove_reconn_callbk, OnReconnect}, State = #state{on_reconnect = OldOnReconnect}) ->
@@ -278,6 +293,17 @@ connect_internal(State) ->
     catch
         _C:Reason:ST -> {error, {Reason, ST}}
     end.
+
+-spec reconnect_callback_signature({module(), atom(), list()}) -> {ok, term()} | error.
+reconnect_callback_signature({M, _, A}) ->
+    try
+        {ok, M:get_reconnect_callback_signature(A)}
+    catch
+        _:_ ->
+            error
+    end;
+reconnect_callback_signature({M, _, A}) ->
+    error.
 
 safe_exec({_M, _F, _A} = Action, MainArg) ->
     try exec(Action, MainArg)
