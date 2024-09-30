@@ -278,8 +278,9 @@ reconnect(Secs, State = #state{client = Client, on_disconnect = Disconnect, supe
 handle_reconnect(undefined, _) ->
     ok;
 handle_reconnect(Client, OnReconnectList) when is_list(OnReconnectList) ->
+    %% reverse apply the callbacks because the newer ones are cons-ed to the head of the list
     lists:foreach(fun(OnReconnectCallback) -> safe_exec(OnReconnectCallback, Client) end,
-                  OnReconnectList).
+                  lists:reverse(OnReconnectList)).
 
 handle_disconnect(undefined, _) ->
     ok;
@@ -347,7 +348,7 @@ ensure_callback(Callbacks) when is_list(Callbacks) ->
     lists:map(fun({_, _, _} = Callback) -> Callback end, Callbacks).
 
 add_conn_callback(OnReconnect, OldOnReconnects) when is_list(OldOnReconnects) ->
-    OldOnReconnects ++ [OnReconnect].
+    [OnReconnect | OldOnReconnects].
 
 remove_conn_callback({Mod, Fn}, Callbacks) when is_list(Callbacks) ->
     lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
