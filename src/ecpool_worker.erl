@@ -310,11 +310,9 @@ reconnect_callback_signature({M, _, A}) ->
     catch
         _:_ ->
             error
-    end;
-reconnect_callback_signature({M, _, A}) ->
-    error.
+    end.
 
-is_reconnct_calback_signature_match(CB, Sig) ->
+is_reconnect_calback_signature_match(CB, Sig) ->
     case reconnect_callback_signature(CB) of
         {ok, Sig2} ->
             Sig2 =:= Sig;
@@ -323,7 +321,7 @@ is_reconnct_calback_signature_match(CB, Sig) ->
     end.
 
 drop_reconnect_callbacks_by_signature(Callbacks, Signature) ->
-    Pred = fun(CB) -> not is_reconnct_calback_signature_match(CB, Signature) end,
+    Pred = fun(CB) -> not is_reconnect_calback_signature_match(CB, Signature) end,
     lists:filter(Pred, Callbacks).
 
 safe_exec({_M, _F, _A} = Action, MainArg) ->
