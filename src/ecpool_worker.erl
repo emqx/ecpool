@@ -297,11 +297,9 @@ ensure_callback(undefined) -> undefined;
 ensure_callback({_,_,_} = Callback) -> Callback.
 
 add_conn_callback(OnReconnect, OldOnReconnects) when is_list(OldOnReconnects) ->
-    [OnReconnect | OldOnReconnects];
+    OldOnReconnects ++ [OnReconnect];
 add_conn_callback(OnReconnect, undefined) ->
-    [OnReconnect];
-add_conn_callback(OnReconnect, OldOnReconnect) ->
-    [OnReconnect, OldOnReconnect].
+    [OnReconnect].
 
 remove_conn_callback({Mod, Fn}, Callbacks) ->
     lists:filter(fun({Mod0, Fn0, _Args}) -> {Mod0, Fn0} =/= {Mod, Fn} end, Callbacks).
