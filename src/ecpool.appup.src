@@ -1,6 +1,9 @@
 %% -*-: erlang -*-
-{"0.5.9",
+{"0.5.10",
   [
+    {"0.5.9", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []}
+    ]},
     {<<"0\\.5\\.[3-8]">>, [
       %% NOTE: MUST start ecpool_monitor before any load_module instructions
       {add_module, ecpool_monitor},
@@ -33,6 +36,9 @@
     ]}
   ],
   [
+    {"0.5.9", [
+      {load_module, ecpool_worker, brutal_purge, soft_purge, []}
+    ]},
     {<<"0\\.5\\.[3-8]">>, [
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
