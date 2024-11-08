@@ -26,7 +26,9 @@
         ]).
 
 -export([ update_clients_global/0
+        , upgrade_clients_state/0
         , reg_worker/0
+        , reg_worker/1
         , get_all_global_clients/0
         , put_client_global/1
         , put_client_global/2
@@ -72,14 +74,12 @@ monitor_spec() ->
     }.
 
 update_clients_global() ->
-    lists:foreach(fun({PoolName, _}) ->
-        lists:foreach(fun({_, WrokerPid}) ->
-                case ecpool_worker:client(WrokerPid) of
-                    {ok, Client} -> put_client_global(WrokerPid, Client);
-                    _ -> ok
-                end
-            end, ecpool:workers(PoolName))
-    end, ecpool_sup:pools()).
+    with_all_workers(fun put_client_global_and_start_monitor/2).
+
+upgrade_clients_state() ->
+    with_all_workers(fun(_, WorkerPid) ->
+            ecpool_worker:upgrade_state(WorkerPid)
+        end).
 
 get_all_global_clients() ->
     ets:tab2list(?DISCOVERY_TAB).
@@ -87,8 +87,8 @@ get_all_global_clients() ->
 put_client_global(Client) ->
     put_client_global(self(), Client).
 
-put_client_global(WrokerPid, Client) ->
-    ets:insert(?DISCOVERY_TAB, {WrokerPid, Client}),
+put_client_global(WorkerPid, Client) ->
+    ets:insert(?DISCOVERY_TAB, {WorkerPid, Client}),
     ok.
 
 get_client_global(WorkerPid) ->
@@ -102,7 +102,10 @@ get_client_global(WorkerPid) ->
     end.
 
 reg_worker() ->
-    gen_server:call(?MODULE, {reg_worker, self()}, infinity).
+    reg_worker(self()).
+
+reg_worker(WorkerPid) ->
+    gen_server:call(?MODULE, {reg_worker, WorkerPid}, infinity).
 
 %%==============================================================================
 
@@ -143,4 +146,17 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%==============================================================================
+with_all_workers(Fun) ->
+    lists:foreach(fun({PoolName, _}) ->
+            lists:foreach(fun({_, WorkerPid}) ->
+                    Fun(PoolName, WorkerPid)
+                end, ecpool:workers(PoolName))
+        end, ecpool_sup:pools()).
 
+put_client_global_and_start_monitor(_, WorkerPid) ->
+    case ecpool_worker:client(WorkerPid) of
+        {ok, Client} ->
+            ok = reg_worker(WorkerPid),
+            put_client_global(WorkerPid, Client);
+        _ -> ok
+    end.

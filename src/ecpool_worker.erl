@@ -20,6 +20,8 @@
 
 -export([start_link/4]).
 
+-export([upgrade_state/1]).
+
 %% API Function Exports
 -export([ client/1
         , exec/3
@@ -124,6 +126,9 @@ get_reconnect_callbacks(Pid) ->
 add_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
 
+upgrade_state(Pid) ->
+    gen_server:cast(Pid, upgrade_state).
+
 %%--------------------------------------------------------------------
 %% gen_server callbacks
 %%--------------------------------------------------------------------
@@ -201,6 +206,12 @@ handle_cast({remove_reconn_callbk, OnReconnect}, State = #state{on_reconnect = O
 
 handle_cast({add_disconn_callbk, OnDisconnect}, State = #state{on_disconnect = OldOnDisconnect}) ->
     {noreply, State#state{on_disconnect = add_conn_callback(OnDisconnect, OldOnDisconnect)}};
+
+handle_cast(upgrade_state, #state{on_reconnect = OnReconnect, on_disconnect = OnDisconnect} = State) ->
+    {noreply, State#state{
+        on_reconnect = ensure_callback(OnReconnect),
+        on_disconnect = ensure_callback(OnDisconnect)
+    }};
 
 handle_cast(_Msg, State) ->
     {noreply, State}.
