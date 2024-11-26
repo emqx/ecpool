@@ -1,11 +1,19 @@
 %% -*-: erlang -*-
-{"0.5.11",
+{"0.5.12",
   [
+    {"0.5.11", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.10", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
     {"0.5.9", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
@@ -45,11 +53,19 @@
     ]}
   ],
   [
+    {"0.5.11", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []}
+    ]},
     {"0.5.10", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
     {"0.5.9", [
+      {load_module, ecpool, brutal_purge, soft_purge, []},
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
