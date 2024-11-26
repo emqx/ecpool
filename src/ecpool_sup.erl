@@ -23,6 +23,7 @@
 %% API
 -export([ start_pool/3
         , stop_pool/1
+        , stop_pool/2
         , get_pool/1
         ]).
 
@@ -32,6 +33,9 @@
 -export([init/1]).
 
 -type pool_name() :: ecpool:pool_name().
+-type stop_opts() :: #{timeout => non_neg_integer()}.
+
+-define(STOP_TIMOEUT, infinity).
 
 %% @doc Start supervisor.
 -spec(start_link() -> {ok, pid()} | {error, term()}).
@@ -50,13 +54,30 @@ start_pool(Pool, Mod, Opts) ->
 %% @doc Stop a pool.
 -spec(stop_pool(Pool :: pool_name()) -> ok | {error, term()}).
 stop_pool(Pool) ->
+    stop_pool(Pool, #{}).
+
+-spec(stop_pool(Pool :: pool_name(), stop_opts()) -> ok | {error, term()}).
+stop_pool(Pool, Opts) ->
     ChildId = child_id(Pool),
-	case supervisor:terminate_child(?MODULE, ChildId) of
-        ok ->
-            supervisor:delete_child(?MODULE, ChildId);
-        {error, Reason} ->
-            {error, Reason}
-	end.
+    Timeout = maps:get(timeout, Opts, ?STOP_TIMOEUT),
+    try gen_server:call(?MODULE, {terminate_child, ChildId}, Timeout) of
+        ok -> delete_child(ChildId, Timeout);
+        {error, Reason} -> {error, Reason}
+    catch
+        exit:{R, _} when R == noproc; R == normal; R == shutdown ->
+            {error, not_found};
+        exit:{timeout, _} ->
+            %% Sometimes the `ecpool_sup` is not responding to terminate request as the `ecpool_pool_sup`
+            %% process got stuck in connecting. In this case, we need to cancel the connection
+            %% by force killing it so the `ecpool_sup` won't be stuck.
+            _ = kill_ecpool_pool_sup_if_stuck(),
+            %% Now the `ecpool_pool_sup` process can be in one of the following state:
+            %%   - has been force killed, or
+            %%   - has gone down by itself or by the `terminate_child` call, or
+            %%   - is still running normally
+            %% In any case we try to remove it from childspec as we have sent a `terminate_child`.
+            delete_child(ChildId, Timeout)
+    end.
 
 %% @doc Get a pool.
 -spec(get_pool(pool_name()) -> undefined | pid()).
@@ -90,3 +111,49 @@ pool_spec(Pool, Mod, Opts) ->
 
 child_id(Pool) -> {pool_sup, Pool}.
 
+%%--------------------------------------------------------------------
+%% Internal functions
+%%--------------------------------------------------------------------
+
+kill_ecpool_pool_sup_if_stuck() ->
+    case process_info(whereis(?MODULE), links) of
+        {links, LinkedPids} ->
+            case search_ecpool_pool_sup_process(LinkedPids) of
+                {ok, Pid} ->
+                    exit(Pid, kill),
+                    ok;
+                Err ->
+                    Err
+            end;
+        undefined ->
+            {error, not_found}
+    end.
+
+search_ecpool_pool_sup_process([]) ->
+    {error, not_found};
+search_ecpool_pool_sup_process([Pid | Rest]) ->
+    case process_info(Pid, [dictionary, status, current_function]) of
+        [{dictionary, Dicts}, {status, Status}, {current_function, CurrFunc}] ->
+            case proplists:get_value('$initial_call', Dicts) of
+                {supervisor, ecpool_pool_sup, _} ->
+                    case {Status, CurrFunc} of
+                        {waiting, {proc_lib, _, _}} ->
+                            {ok, Pid};
+                        _ ->
+                            {error, not_stuck_in_start}
+                    end;
+                _ ->
+                    search_ecpool_pool_sup_process(Rest)
+            end;
+        undefined ->
+            search_ecpool_pool_sup_process(Rest)
+    end.
+
+delete_child(ChildId, Timeout) ->
+    try gen_server:call(?MODULE, {delete_child, ChildId}, Timeout)
+    catch
+        exit:{R, _} when R == noproc; R == normal; R == shutdown ->
+            {error, not_found};
+        exit:{timeout, _} ->
+            {error, timeout}
+    end.

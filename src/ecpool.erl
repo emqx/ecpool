@@ -20,6 +20,7 @@
         , start_pool/3
         , start_sup_pool/3
         , stop_sup_pool/1
+        , stop_sup_pool/2
         , get_client/1
         , get_client/2
         , pick_and_do/3
@@ -90,6 +91,9 @@ start_sup_pool(Pool, Mod, Opts) ->
 %% @doc Start the pool supervised by ecpool_sup
 stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
+
+stop_sup_pool(Pool, Opts) ->
+    ecpool_sup:stop_pool(Pool, Opts).
 
 %% @doc Get client/connection
 -spec(get_client(pool_name()) -> get_client_ret()).

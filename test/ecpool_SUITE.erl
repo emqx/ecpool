@@ -48,6 +48,7 @@ groups() ->
       [t_start_pool,
        t_start_pool_any_name,
        t_start_sup_pool,
+       t_start_sup_pool_timeout,
        t_empty_pool,
        t_empty_hash_pool,
        t_restart_client,
@@ -111,6 +112,19 @@ t_start_sup_pool(_Config) ->
     ?assertEqual([{xpool, Pid1}, {ypool, Pid2}], lists:sort(ecpool_sup:pools())),
     ecpool:stop_sup_pool(ypool),
     ecpool:stop_sup_pool(xpool),
+    ?assertEqual([], ecpool_sup:pools()).
+
+t_start_sup_pool_timeout(_Config) ->
+    spawn_link(fun() ->
+        ?assertMatch({error, {killed, _}},
+            ecpool:start_sup_pool(timeout_pool, test_timeout_client, ?POOL_OPTS))
+    end),
+    timer:sleep(100),
+    {Time, Val} = timer:tc(ecpool, stop_sup_pool, [timeout_pool, #{timeout => 200}]),
+    ?assert(Time/1000 < 500),
+    %% The `ecpool:start_sup_pool/3` has not completed before it was cancelled (killed),
+    %% so `ecpool:stop_sup_pool/2` returns `{error, not_found}`.
+    ?assertEqual({error, not_found}, Val),
     ?assertEqual([], ecpool_sup:pools()).
 
 t_restart_client(_Config) ->
