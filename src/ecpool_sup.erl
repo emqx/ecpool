@@ -118,10 +118,10 @@ child_id(Pool) -> {pool_sup, Pool}.
 kill_ecpool_pool_sup_if_stuck() ->
     case process_info(whereis(?MODULE), links) of
         {links, LinkedPids} ->
-            case search_ecpool_pool_sup_process(LinkedPids) of
+            case search_stuck_ecpool_pool_sup(LinkedPids) of
                 {ok, Pid} ->
                     exit(Pid, kill),
-                    ok;
+                    {ok, Pid};
                 Err ->
                     Err
             end;
@@ -129,24 +129,22 @@ kill_ecpool_pool_sup_if_stuck() ->
             {error, not_found}
     end.
 
-search_ecpool_pool_sup_process([]) ->
+search_stuck_ecpool_pool_sup([]) ->
     {error, not_found};
-search_ecpool_pool_sup_process([Pid | Rest]) ->
-    case process_info(Pid, [dictionary, status, current_function]) of
-        [{dictionary, Dicts}, {status, Status}, {current_function, CurrFunc}] ->
+search_stuck_ecpool_pool_sup([Pid | Rest]) ->
+    case process_info(Pid, dictionary) of
+        {dictionary, Dicts} ->
             case proplists:get_value('$initial_call', Dicts) of
                 {supervisor, ecpool_pool_sup, _} ->
-                    case {Status, CurrFunc} of
-                        {waiting, {proc_lib, _, _}} ->
-                            {ok, Pid};
-                        _ ->
-                            {error, not_stuck_in_start}
+                    case proplists:get_value(init_incomplete, Dicts) of
+                        true -> {ok, Pid};
+                        _ -> {error, {not_stuck_in_init, Pid}}
                     end;
                 _ ->
-                    search_ecpool_pool_sup_process(Rest)
+                    search_stuck_ecpool_pool_sup(Rest)
             end;
         undefined ->
-            search_ecpool_pool_sup_process(Rest)
+            search_stuck_ecpool_pool_sup(Rest)
     end.
 
 delete_child(ChildId, Timeout) ->

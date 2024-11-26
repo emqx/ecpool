@@ -3,17 +3,20 @@
   [
     {"0.5.11", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
-      {load_module, ecpool_sup, brutal_purge, soft_purge, []}
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.5.10", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
     {"0.5.9", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
@@ -25,6 +28,7 @@
       {apply, {ecpool_monitor, update_clients_global, []}},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {apply, {ecpool_monitor, upgrade_clients_state, []}},
       {load_module, ecpool, brutal_purge, soft_purge, []}
@@ -35,6 +39,7 @@
       {apply, {ecpool_monitor, update_clients_global, []}},
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {apply, {ecpool_monitor, upgrade_clients_state, []}},
       {load_module, ecpool, brutal_purge, soft_purge, []},
@@ -49,29 +54,34 @@
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []}
     ]}
   ],
   [
     {"0.5.11", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
-      {load_module, ecpool_sup, brutal_purge, soft_purge, []}
+      {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []}
     ]},
     {"0.5.10", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
     {"0.5.9", [
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_monitor, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []}
     ]},
     {<<"0\\.5\\.[3-8]">>, [
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {apply, {ecpool_monitor, ensure_monitor_stopped, []}},
@@ -80,6 +90,7 @@
     {<<"0\\.5\\.[0-2]">>, [
       {load_module, ecpool_pool, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker, brutal_purge, soft_purge, []},
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
@@ -92,6 +103,7 @@
       {load_module, ecpool, brutal_purge, soft_purge, []},
       {load_module, ecpool_worker_sup, brutal_purge, soft_purge, []},
       {load_module, ecpool_sup, brutal_purge, soft_purge, []},
+      {load_module, ecpool_pool_sup, brutal_purge, soft_purge, []},
       {apply, {ecpool_monitor, ensure_monitor_stopped, []}},
       {delete_module,ecpool_monitor}
     ]}
