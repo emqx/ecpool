@@ -24,13 +24,41 @@
 %% Supervisor callbacks
 -export([init/1]).
 
+-export([clear_init_incomplete/0]).
+
 start_link(Pool, Mod, Opts) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
+    case supervisor:start_link(?MODULE, [Pool, Mod, Opts]) of
+        {ok, SupPid} = Ret ->
+            _ = init_complete(SupPid),
+            Ret;
+        Error ->
+            Error
+    end.
 
 init([Pool, Mod, Opts]) ->
+    set_init_incomplete(),
     {ok, { {one_for_all, 10, 100}, [
             {pool, {ecpool_pool, start_link, [Pool, Opts]},
                 transient, 16#ffff, worker, [ecpool_pool]},
             {worker_sup, {ecpool_worker_sup, start_link, [Pool, Mod, Opts]},
                 transient, infinity, supervisor, [ecpool_worker_sup]}] }}.
 
+init_complete(SupPid) ->
+    %% Not a real supervisor child, just for clearing the process dict with key `init_incomplete`
+    DummySpec = #{
+        id => clear_init_incomplete,
+        start => {?MODULE, clear_init_incomplete, []},
+        restart => temporary,
+        shutdown => brutal_kill,
+        type => worker,
+        modules => [?MODULE]
+    },
+    supervisor:start_child(SupPid, DummySpec).
+
+set_init_incomplete() ->
+    _ = erlang:put(init_incomplete, true),
+    ok.
+
+clear_init_incomplete() ->
+    _ = erlang:erase(init_incomplete),
+    {error, dummy_child}.
