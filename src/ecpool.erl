@@ -67,6 +67,11 @@
     | {on_disconnect, conn_callback()}
     | tuple().
 -type get_client_ret() :: pid() | false | no_such_pool.
+-type start_error() :: no_worker_sup
+    | worker_not_started
+    | {worker_start_failed, term()}
+    | {worker_exit, term()}
+    | supervisor:startlink_err().
 
 -define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
 
@@ -79,13 +84,28 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
       modules => [ecpool_pool_sup]}.
 
 %% @doc Start the pool sup.
--spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
+-spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_pool(Pool, Mod, Opts) ->
-    ecpool_pool_sup:start_link(Pool, Mod, Opts).
+    case ecpool_pool_sup:start_link(Pool, Mod, Opts) of
+        {ok, Pid} ->
+            wait_for_workers_started(Pid, fun() ->
+                gen_server:stop(Pid)
+            end);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc Start the pool supervised by ecpool_sup
+-spec(start_sup_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_sup_pool(Pool, Mod, Opts) ->
-    ecpool_sup:start_pool(Pool, Mod, Opts).
+    case ecpool_sup:start_pool(Pool, Mod, Opts) of
+        {ok, Pid} ->
+            wait_for_workers_started(Pid, fun() ->
+                    stop_sup_pool(Pool)
+                end);
+        {error, Reason} ->
+            {error, Reason}
+    end.
 
 %% @doc Start the pool supervised by ecpool_sup
 stop_sup_pool(Pool) ->
@@ -183,3 +203,30 @@ exec({M, F, A}, Client) ->
     erlang:apply(M, F, [Client]++A);
 exec(Action, Client) when is_function(Action) ->
     Action(Client).
+
+wait_for_workers_started(Pid, Clearer) ->
+    case lists:keyfind(worker_sup, 1, supervisor:which_children(Pid)) of
+        {worker_sup, WorkerSupPid, supervisor, _} ->
+            case check_worker_start_results(supervisor:which_children(WorkerSupPid)) of
+                ok -> {ok, Pid};
+                Error ->
+                    _ = Clearer(),
+                    Error
+            end;
+        false ->
+            _ = Clearer(),
+            {error, no_worker_sup}
+    end.
+
+check_worker_start_results([]) ->
+    ok;
+check_worker_start_results([{_, WorkerPid, worker, _} | Workers]) ->
+    %% NOTE: `ecpool_worker:take_start_result/1` is an infinity call which will block the caller
+    %%  if the worker is busy on starting.
+    case ecpool_worker:take_start_result(WorkerPid) of
+        not_started -> {error, worker_not_started};
+        {start_failed, Error} -> {error, {worker_start_failed, Error}};
+        {exit, Reason} -> {error, {worker_exit, Reason}};
+        started -> check_worker_start_results(Workers);
+        undefined -> check_worker_start_results(Workers)
+    end.

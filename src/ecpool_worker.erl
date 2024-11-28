@@ -28,6 +28,7 @@
         , exec_async/2
         , exec_async/3
         , is_connected/1
+        , take_start_result/1
         , set_reconnect_callback/2
         , set_disconnect_callback/2
         , add_reconnect_callback/2
@@ -39,6 +40,7 @@
 
 %% gen_server Function Exports
 -export([ init/1
+        , handle_continue/2
         , handle_call/3
         , handle_cast/2
         , handle_info/2
@@ -65,6 +67,11 @@
 
 -callback(connect(ConnOpts :: list())
           -> {ok, pid()} | {ok, {pid(), pid()}, map()} | {error, Reason :: term()}).
+
+-type start_result() :: not_started | started | {start_failed, term()} | {exit, term()} | undefined.
+
+-define(set_start_result(RESULT), erlang:put(start_result, RESULT)).
+-define(take_start_result(), erlang:erase(start_result)).
 
 %%--------------------------------------------------------------------
 %% API
@@ -97,6 +104,14 @@ exec_async(Pid, Action, Callback) ->
 -spec(is_connected(pid()) -> boolean()).
 is_connected(Pid) ->
     gen_server:call(Pid, is_connected, infinity).
+
+-spec take_start_result(pid()) -> start_result().
+take_start_result(Pid) ->
+    try gen_server:call(Pid, take_start_result, infinity)
+    catch
+        exit:{{shutdown, Reason}, _} -> {exit, Reason};
+        exit:{Reason, _} -> {exit, Reason}
+    end.
 
 -spec(set_reconnect_callback(pid(), ecpool:conn_callback()) -> ok).
 set_reconnect_callback(Pid, OnReconnect) ->
@@ -136,19 +151,27 @@ upgrade_state(Pid) ->
 init([Pool, Id, Mod, Opts]) ->
     ecpool_monitor:reg_worker(),
     process_flag(trap_exit, true),
-    State = #state{pool = Pool,
-                   id   = Id,
-                   mod  = Mod,
-                   opts = Opts,
-                   on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
-                   on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
-                  },
+    State = #state{
+        pool = Pool, id = Id, mod = Mod, opts = Opts,
+        on_reconnect = ensure_callback(proplists:get_value(on_reconnect, Opts)),
+        on_disconnect = ensure_callback(proplists:get_value(on_disconnect, Opts))
+    },
+    ?set_start_result(not_started),
+    {ok, State, {continue, start}}.
+
+handle_continue(start, #state{pool = Pool, id = Id} = State) ->
     case connect_internal(State) of
         {ok, NewState} ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
-            {ok, NewState};
-        {error, Error} -> {stop, Error}
+            ?set_start_result(started),
+            {noreply, NewState};
+        {error, Error} ->
+            ?set_start_result({start_failed, Error}),
+            {noreply, State}
     end.
+
+handle_call(take_start_result, _From, State) ->
+    {reply, ?take_start_result(), State};
 
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
     IsAlive = Client =/= undefined andalso is_process_alive(Client),
@@ -164,7 +187,7 @@ handle_call(client, _From, State = #state{client = Client}) ->
     {reply, {ok, Client}, State};
 
 handle_call({exec, Action}, _From, State = #state{client = Client}) ->
-    {reply, safe_exec(Action, Client), State};
+    {reply, with_client(Action, Client), State};
 
 handle_call(get_reconnect_callbacks, _From, #state{on_reconnect = OnReconnect} = State) ->
     {reply, OnReconnect, State};
@@ -174,11 +197,11 @@ handle_call(Req, _From, State) ->
     {reply, ignored, State}.
 
 handle_cast({exec_async, Action}, State = #state{client = Client}) ->
-    _ = safe_exec(Action, Client),
+    _ = with_client(Action, Client),
     {noreply, State};
 
 handle_cast({exec_async, Action, Callback}, State = #state{client = Client}) ->
-    _ = safe_exec(Callback, safe_exec(Action, Client)),
+    _ = safe_exec(Callback, with_client(Action, Client)),
     {noreply, State};
 
 handle_cast({set_reconn_callbk, OnReconnect}, State) ->
@@ -255,7 +278,14 @@ terminate(_Reason, #state{pool = Pool, id = Id,
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
     %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
     stop_supervisees(SupPids, 300),
-    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    try
+        gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id})
+    catch
+        error:badarg ->
+            %% Ignore the `{badarg,[{gproc,unreg,[...]}]` error as it just means the pool worker
+            %% has not connected.
+            ok
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
@@ -290,13 +320,13 @@ handle_reconnect(undefined, _) ->
     ok;
 handle_reconnect(Client, OnReconnectList) when is_list(OnReconnectList) ->
     %% reverse apply the callbacks because the newer ones are cons-ed to the head of the list
-    lists:foreach(fun(OnReconnectCallback) -> safe_exec(OnReconnectCallback, Client) end,
+    lists:foreach(fun(OnReconnectCallback) -> with_client(OnReconnectCallback, Client) end,
                   lists:reverse(OnReconnectList)).
 
 handle_disconnect(undefined, _) ->
     ok;
 handle_disconnect(Client, OnDisconnectList) ->
-    lists:foreach(fun(OnDisconnectCallback) -> safe_exec(OnDisconnectCallback, Client) end,
+    lists:foreach(fun(OnDisconnectCallback) -> with_client(OnDisconnectCallback, Client) end,
                   OnDisconnectList).
 
 connect_internal(State) ->
@@ -335,6 +365,11 @@ is_reconnect_calback_signature_match(CB, Sig) ->
 drop_reconnect_callbacks_by_signature(Callbacks, Signature) ->
     Pred = fun(CB) -> not is_reconnect_calback_signature_match(CB, Signature) end,
     lists:filter(Pred, Callbacks).
+
+with_client(_, undefined) ->
+    {error, ecpool_disconnected};
+with_client(Action, Client) ->
+    safe_exec(Action, Client).
 
 safe_exec({_M, _F, _A} = Action, MainArg) ->
     try exec(Action, MainArg)

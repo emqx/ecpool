@@ -30,7 +30,7 @@ init([Pool, Mod, Opts]) ->
                      #{id => {worker, Id},
                        start => {ecpool_worker, start_link, [Pool, Id, Mod, Opts]},
                        restart => transient,
-                       shutdown => 5000,
+                       shutdown => 2000,
                        type => worker,
                        modules => [ecpool_worker, Mod]}
                  end,
