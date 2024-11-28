@@ -67,6 +67,11 @@
     | {on_disconnect, conn_callback()}
     | tuple().
 -type get_client_ret() :: pid() | false | no_such_pool.
+-type start_error() :: no_worker_sup
+    | worker_not_started
+    | {worker_start_failed, term()}
+    | {worker_exit, term()}
+    | supervisor:startlink_err().
 
 -define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
 
@@ -79,7 +84,7 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
       modules => [ecpool_pool_sup]}.
 
 %% @doc Start the pool sup.
--spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
+-spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_pool(Pool, Mod, Opts) ->
     case ecpool_pool_sup:start_link(Pool, Mod, Opts) of
         {ok, Pid} ->
@@ -91,6 +96,7 @@ start_pool(Pool, Mod, Opts) ->
     end.
 
 %% @doc Start the pool supervised by ecpool_sup
+-spec(start_sup_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_sup_pool(Pool, Mod, Opts) ->
     case ecpool_sup:start_pool(Pool, Mod, Opts) of
         {ok, Pid} ->
