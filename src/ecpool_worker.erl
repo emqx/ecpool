@@ -278,7 +278,14 @@ terminate(_Reason, #state{pool = Pool, id = Id,
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
     %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
     stop_supervisees(SupPids, 300),
-    gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    try
+        gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id})
+    catch
+        error:badarg ->
+            %% Ignore the `{badarg,[{gproc,unreg,[...]}]` error as it just means the pool worker
+            %% has not connected.
+            ok
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
