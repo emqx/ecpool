@@ -15,7 +15,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - otp_release: 22
           - otp_release: 23
           - otp_release: 24
           - otp_release: 25
