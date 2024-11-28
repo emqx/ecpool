@@ -66,6 +66,7 @@ groups() ->
        t_start_pool_any_name,
        t_start_sup_pool,
        t_start_sup_pool_timeout,
+       t_start_sup_duplicated,
        t_empty_pool,
        t_empty_hash_pool,
        t_restart_client,
@@ -145,6 +146,20 @@ t_start_sup_pool_timeout(_Config) ->
     ?assert(Time/1000 < (ShutdownTimeout * Size + 1000)),
     ?assertMatchOneOf(ok, {error,not_found}, Val),
     ?assertEqual([], ecpool_sup:pools()).
+
+t_start_sup_duplicated(_Config) ->
+    Opts = [{pool_size, 1} | proplists:delete(pool_size, ?POOL_OPTS)],
+    spawn_link(fun() ->
+        ?assertMatch({error, {worker_exit, killed}},
+            ecpool:start_sup_pool(dup_pool, test_timeout_client, Opts))
+    end),
+    timer:sleep(200),
+    ?assertMatch({error, {already_started, _}},
+        ecpool:start_sup_pool(dup_pool, test_timeout_client, Opts)),
+    ?assertMatch({ok, _},
+        ecpool:start_sup_pool(another_pool, test_client, Opts)),
+    ecpool:stop_sup_pool(dup_pool),
+    ecpool:stop_sup_pool(another_pool).
 
 t_restart_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}]),
