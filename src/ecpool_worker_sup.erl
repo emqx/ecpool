@@ -18,23 +18,23 @@
 
 -behaviour(supervisor).
 
--export([start_link/4]).
+-export([start_link/3]).
 
 -export([init/1]).
 
 -export([pool_size/1]).
 
-start_link(Pool, Mod, Opts, InitialConnectResultReceiverAlias) ->
-    supervisor:start_link(?MODULE, [Pool, Mod, Opts, InitialConnectResultReceiverAlias]).
+start_link(Pool, Mod, Opts) ->
+    supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
 
-init([Pool, Mod, Opts, InitialConnectResultReceiverAlias]) ->
+init([Pool, Mod, Opts]) ->
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
                        start => {ecpool_worker,
                                  start_link,
-                                 [Pool, Id, Mod, Opts, InitialConnectResultReceiverAlias]},
+                                 [Pool, Id, Mod, Opts]},
                        restart => transient,
-                       shutdown => 5000,
+                       shutdown => 2_000,
                        type => worker,
                        modules => [ecpool_worker, Mod]}
                  end,
@@ -44,4 +44,3 @@ init([Pool, Mod, Opts, InitialConnectResultReceiverAlias]) ->
 pool_size(Opts) ->
     Schedulers = erlang:system_info(schedulers),
     proplists:get_value(pool_size, Opts, Schedulers).
-
