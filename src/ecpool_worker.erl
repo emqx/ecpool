@@ -20,6 +20,8 @@
 
 -export([start_link/4]).
 
+-export([upgrade_state/1]).
+
 %% API Function Exports
 -export([ client/1
         , exec/3
@@ -70,6 +72,11 @@
 
 -callback(connect(ConnOpts :: list())
           -> {ok, pid()} | {ok, {pid(), pid()}, map()} | {error, Reason :: term()}).
+
+-type start_result() :: not_started | started | {start_failed, term()} | {exit, term()} | undefined.
+
+-define(set_start_result(RESULT), erlang:put(start_result, RESULT)).
+-define(take_start_result(), erlang:erase(start_result)).
 
 %%--------------------------------------------------------------------
 %% API
@@ -140,6 +147,9 @@ get_reconnect_callbacks(Pid) ->
 add_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
 
+upgrade_state(Pid) ->
+    gen_server:cast(Pid, upgrade_state).
+
 %%--------------------------------------------------------------------
 %% gen_server callbacks
 %%--------------------------------------------------------------------
@@ -166,7 +176,7 @@ handle_continue(connect, State) ->
             gproc_pool:connect_worker(ecpool:name(Pool), {Pool, Id}),
             ?set_start_result(started),
             {noreply, NewState};
-        Error ->
+        {error, Error} ->
             ?set_start_result({start_failed, Error}),
             {noreply, State}
     end.
@@ -256,9 +266,14 @@ terminate(_Reason, #state{pool = Pool, id = Id,
     %% workers to be killed, the total time spend by the ecpool_worker_sup will be
     %% (0.3 * NumOfSupervisees * NumOfWorkers) seconds.
     stop_supervisees(SupPids, 300),
-    %% Ignore the exeception thrown by gproc_pool:disconnect_worker if the name
-    %% is not registered
-    catch gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id}).
+    try
+        gproc_pool:disconnect_worker(ecpool:name(Pool), {Pool, Id})
+    catch
+        error:badarg ->
+            %% Ignore the `{badarg,[{gproc,unreg,[...]}]` error as it just means the pool worker
+            %% has not connected.
+            ok
+    end.
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
