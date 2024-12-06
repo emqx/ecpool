@@ -26,7 +26,6 @@
         ]).
 
 -export([ update_clients_global/0
-        , upgrade_clients_state/0
         , reg_worker/0
         , reg_worker/1
         , get_all_global_clients/0
@@ -75,11 +74,6 @@ monitor_spec() ->
 
 update_clients_global() ->
     with_all_workers(fun put_client_global_and_start_monitor/2).
-
-upgrade_clients_state() ->
-    with_all_workers(fun(_, WorkerPid) ->
-            ecpool_worker:upgrade_state(WorkerPid)
-        end).
 
 get_all_global_clients() ->
     ets:tab2list(?DISCOVERY_TAB).

@@ -20,8 +20,6 @@
 
 -export([start_link/4]).
 
--export([upgrade_state/1]).
-
 %% API Function Exports
 -export([ client/1
         , exec/3
@@ -62,7 +60,6 @@
          }).
 
 -type start_result() :: not_started | started | {start_failed, term()} | {exit, term()} | undefined.
-
 -define(set_start_result(RESULT), erlang:put(start_result, RESULT)).
 -define(take_start_result(), erlang:erase(start_result)).
 
@@ -72,11 +69,6 @@
 
 -callback(connect(ConnOpts :: list())
           -> {ok, pid()} | {ok, {pid(), pid()}, map()} | {error, Reason :: term()}).
-
--type start_result() :: not_started | started | {start_failed, term()} | {exit, term()} | undefined.
-
--define(set_start_result(RESULT), erlang:put(start_result, RESULT)).
--define(take_start_result(), erlang:erase(start_result)).
 
 %%--------------------------------------------------------------------
 %% API
@@ -146,9 +138,6 @@ get_reconnect_callbacks(Pid) ->
 -spec(add_disconnect_callback(pid(), ecpool:conn_callback()) -> ok).
 add_disconnect_callback(Pid, OnDisconnect) ->
     gen_server:cast(Pid, {add_disconn_callbk, OnDisconnect}).
-
-upgrade_state(Pid) ->
-    gen_server:cast(Pid, upgrade_state).
 
 %%--------------------------------------------------------------------
 %% gen_server callbacks
