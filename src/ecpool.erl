@@ -67,6 +67,11 @@
     | {on_disconnect, conn_callback()}
     | tuple().
 -type get_client_ret() :: pid() | false | no_such_pool.
+-type start_error() :: no_worker_sup
+    | worker_not_started
+    | {worker_start_failed, term()}
+    | {worker_exit, term()}
+    | supervisor:startlink_err().
 
 -define(IS_ACTION(ACTION), ((is_tuple(ACTION) andalso tuple_size(ACTION) == 3) orelse is_function(ACTION, 1))).
 
@@ -79,51 +84,27 @@ pool_spec(ChildId, Pool, Mod, Opts) ->
       modules => [ecpool_pool_sup]}.
 
 %% @doc Start the pool sup.
--spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, term()}).
+-spec(start_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_pool(Pool, Mod, Opts) ->
-    %% See start_sup_pool/3 for an explanation of StartProcessAliasID
-    StartProcessAliasID = erlang:alias(),
-    try
-        {ok, Pid} = OkResponse = ecpool_pool_sup:start_link(Pool,
-                                                            Mod,
-                                                            Opts,
-                                                            StartProcessAliasID),
-        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
-            ok ->
-                OkResponse;
-            Error ->
-                unlink(Pid),
-                exit(Pid, shutdown),
-                Error
-        end
-    after
-        erlang:unalias(StartProcessAliasID),
-        flush_initial_connect_response_messages(StartProcessAliasID)
+    case ecpool_pool_sup:start_link(Pool, Mod, Opts) of
+        {ok, Pid} ->
+            wait_for_workers_started(Pid, fun() ->
+                gen_server:stop(Pid)
+            end);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Start the pool supervised by ecpool_sup
+-spec(start_sup_pool(pool_name(), atom(), [option()]) -> {ok, pid()} | {error, start_error()}).
 start_sup_pool(Pool, Mod, Opts) ->
-    %% To avoid confusing OTP crash report log entries, supervisors and the
-    %% gen_server ecpool_worker should never return a non-ok response from the
-    %% init function. Instead, to handle errors from the initial connect
-    %% attempt, we pass our process alias ID to the ecpool_worker so the workers
-    %% can send back the errors.
-    StartProcessAliasID = erlang:alias(),
-    try
-        OkResponse = ecpool_sup:start_pool(Pool,
-                                           Mod,
-                                           Opts,
-                                           StartProcessAliasID),
-        case aggregate_initial_connect_responses(StartProcessAliasID, Opts) of
-            ok ->
-                OkResponse;
-            Error ->
-                _ = stop_sup_pool(Pool),
-                Error
-        end
-    after
-        erlang:unalias(StartProcessAliasID),
-        flush_initial_connect_response_messages(StartProcessAliasID)
+    case ecpool_sup:start_pool(Pool, Mod, Opts) of
+        {ok, Pid} ->
+            wait_for_workers_started(Pid, fun() ->
+                    stop_sup_pool(Pool)
+                end);
+        {error, Reason} ->
+            {error, Reason}
     end.
 
 %% @doc Stop the pool supervised by ecpool_sup
@@ -225,31 +206,29 @@ exec(Action, Client) when is_function(Action) ->
 
 %% Internal functions
 
-aggregate_initial_connect_responses(StartProcessAliasID,
-                                    Opts) ->
-    PoolSize = ecpool_worker_sup:pool_size(Opts),
-    aggregate_initial_connect_responses_helper(PoolSize,
-                                               StartProcessAliasID).
+wait_for_workers_started(Pid, Clearer) ->
+    case lists:keyfind(worker_sup, 1, supervisor:which_children(Pid)) of
+        {worker_sup, WorkerSupPid, supervisor, _} ->
+            case check_worker_start_results(supervisor:which_children(WorkerSupPid)) of
+                ok -> {ok, Pid};
+                Error ->
+                    _ = Clearer(),
+                    Error
+            end;
+        false ->
+            _ = Clearer(),
+            {error, no_worker_sup}
+    end.
 
-aggregate_initial_connect_responses_helper(0 = _RespLeft, _RespRef) ->
-    %% We got an ok response from all workers
+check_worker_start_results([]) ->
     ok;
-aggregate_initial_connect_responses_helper(RespLeft, RespRef) ->
-    receive
-        {Ref, ok} when Ref =:= RespRef ->
-            aggregate_initial_connect_responses_helper(RespLeft - 1, RespRef);
-        {Ref, NonOkResp} when Ref =:= RespRef ->
-            NonOkResp
+check_worker_start_results([{_, WorkerPid, worker, _} | Workers]) ->
+    %% NOTE: `ecpool_worker:take_start_result/1` is an infinity call which will block the caller
+    %%  if the worker is busy on starting.
+    case ecpool_worker:take_start_result(WorkerPid) of
+        not_started -> {error, worker_not_started};
+        {start_failed, Error} -> {error, {worker_start_failed, Error}};
+        {exit, Reason} -> {error, {worker_exit, Reason}};
+        started -> check_worker_start_results(Workers);
+        undefined -> check_worker_start_results(Workers)
     end.
-
-%% Called after the receiver process has been unaliased itself to make sure we
-%% remove all messages sent to the alias from the process inbox
-flush_initial_connect_response_messages(RespRef) ->
-    receive
-        {Ref, _Resp} when Ref =:= RespRef ->
-            flush_initial_connect_response_messages(RespRef)
-    after 0 ->
-              ok
-    end.
-
-

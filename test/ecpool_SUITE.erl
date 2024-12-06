@@ -16,8 +16,8 @@
 
 -module(ecpool_SUITE).
 
--compile(export_all).
 -compile(nowarn_export_all).
+-compile(export_all).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -40,6 +40,23 @@
          {encoding,  utf8}
         ]).
 
+-define(assertMatchOneOf(Guard1, Guard2, Expr),
+    begin
+    ((fun () ->
+        case (Expr) of
+            Guard1 -> ok;
+            Guard2 -> ok;
+            X__V -> erlang:error(
+                      {assertMatch,
+                        [{module, ?MODULE},
+                         {line, ?LINE},
+                         {expression, (??Expr)},
+                         {pattern, ([??Guard1, ??Guard2])},
+                         {value, X__V}]})
+        end
+      end)())
+    end).
+
 all() ->
     [{group, all}].
 
@@ -52,6 +69,8 @@ groups() ->
        t_start_pool_one_initial_connect_fail,
        t_start_pool_any_name,
        t_start_sup_pool,
+       t_start_sup_pool_timeout,
+       t_start_sup_duplicated,
        t_empty_pool,
        t_empty_hash_pool,
        t_restart_client,
@@ -131,18 +150,19 @@ t_start_pool_any_name(_Config) ->
         end, lists:seq(1, 10)).
 
 t_empty_pool(_Config) ->
-    ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, random}]),
+    ?assertMatchOneOf({error, {worker_exit, normal}}, {error, {worker_exit, noproc}},
+        ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, random}])),
     % NOTE: give some time to clients to exit
     ok = timer:sleep(100),
     ?assertEqual([], ecpool:workers(?POOL)),
-    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, fun(_) -> ok end)).
+    ?assertEqual({error, no_such_pool}, ecpool:with_client(?POOL, fun(_) -> ok end)).
 
 t_empty_hash_pool(_Config) ->
     ecpool:start_pool(?POOL, test_failing_client, [{pool_size, 4}, {pool_type, hash}]),
     % NOTE: give some time to clients to exit
     ok = timer:sleep(100),
     ?assertEqual([], ecpool:workers(?POOL)),
-    ?assertEqual({error, ecpool_empty}, ecpool:with_client(?POOL, 42, fun(_) -> ok end)).
+    ?assertEqual({error, no_such_pool}, ecpool:with_client(?POOL, 42, fun(_) -> ok end)).
 
 t_start_sup_pool(_Config) ->
     {ok, Pid1} = ecpool:start_sup_pool(xpool, test_client, ?POOL_OPTS),
@@ -151,6 +171,35 @@ t_start_sup_pool(_Config) ->
     ecpool:stop_sup_pool(ypool),
     ecpool:stop_sup_pool(xpool),
     ?assertEqual([], ecpool_sup:pools()).
+
+t_start_sup_pool_timeout(_Config) ->
+    ShutdownTimeout = 2_000, %% the `shutdown` option in ecpool_worker_sup:init/1
+    Size = 2,
+    Opts = [{pool_size, Size} | proplists:delete(pool_size, ?POOL_OPTS)],
+    spawn_link(fun() ->
+        ?assertMatch({error, {worker_exit, killed}},
+            ecpool:start_sup_pool(timeout_pool, test_timeout_client, Opts))
+    end),
+    timer:sleep(200),
+    {Time, Val} = timer:tc(ecpool, stop_sup_pool, [timeout_pool]),
+    ?assert(Time / 1_000 < (ShutdownTimeout * Size + 1_000),
+            #{time => Time / 1_000, shutdown_timeout => ShutdownTimeout, size => Size}),
+    ?assertMatchOneOf(ok, {error,not_found}, Val),
+    ?assertEqual([], ecpool_sup:pools()).
+
+t_start_sup_duplicated(_Config) ->
+    Opts = [{pool_size, 1} | proplists:delete(pool_size, ?POOL_OPTS)],
+    spawn_link(fun() ->
+        ?assertMatch({error, {worker_exit, killed}},
+            ecpool:start_sup_pool(dup_pool, test_timeout_client, Opts))
+    end),
+    timer:sleep(200),
+    ?assertMatch({error, {already_started, _}},
+        ecpool:start_sup_pool(dup_pool, test_timeout_client, Opts)),
+    ?assertMatch({ok, _},
+        ecpool:start_sup_pool(another_pool, test_client, Opts)),
+    ecpool:stop_sup_pool(dup_pool),
+    ecpool:stop_sup_pool(another_pool).
 
 t_restart_client(_Config) ->
     ecpool:start_pool(?POOL, test_client, [{pool_size, 4}]),
