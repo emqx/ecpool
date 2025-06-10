@@ -87,9 +87,6 @@ groups() ->
 init_per_suite(Config) ->
     {ok, _} = application:ensure_all_started(gproc),
     {ok, _} = application:ensure_all_started(ecpool),
-    %% Uncomment the following line to see OTP crash reports
-    %% (this seems to be disabled by default by common test)
-    %% snabbkaffe:fix_ct_logging(),
     Config.
 
 end_per_suite(_Config) ->
