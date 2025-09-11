@@ -43,7 +43,7 @@ connect(Opts) ->
             {ok, Pid2} = gen_server:start_link(?MODULE, [Opts], []),
             {ok, {Pid1, Pid2}, #{supervisees => [Pid1, Pid2]}};
         false ->
-            gen_server:start_link(?MODULE, [Opts], [])
+            gen_server:start_link(?MODULE, Opts, [])
     end.
 
 plus(Pid, L, R) ->
@@ -60,7 +60,13 @@ stop(Pid, Reason) ->
 %%-----------------------------------------------------------------------------
 
 init(Args) ->
-    {ok, Args}.
+    case proplists:get_value(crash_after, Args, undefined) of
+        undefined ->
+            {ok, Args};
+        TimeMS when is_integer(TimeMS) ->
+            erlang:send_after(TimeMS, self(), crash),
+            {ok, Args}
+    end.
 
 handle_call({stop, Reason}, _From, State) ->
     {stop, Reason, ok, State};
@@ -74,6 +80,9 @@ handle_call(_Req, _From, State) ->
 handle_cast(_Msg, State) ->
     {noreply, State}.
 
+handle_info(crash, _State) ->
+    ct:pal("~p crashing", [self()]),
+    exit(crash);
 handle_info(_Info, State) ->
     {noreply, State}.
 
@@ -82,4 +91,3 @@ terminate(_Reason, _State) ->
 
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
-

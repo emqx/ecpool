@@ -81,7 +81,8 @@ groups() ->
        t_client_exec2_random,
        t_multiprocess_client,
        t_multiprocess_client_not_restart,
-       t_pick_and_do_fun
+       t_pick_and_do_fun,
+       t_check_pool_integrity
       ]}].
 
 init_per_suite(Config) ->
@@ -350,3 +351,26 @@ t_pick_and_do_fun(_Config) ->
     {ok, _} = ecpool:start_pool(Pool, test_client, Opts),
     ?assertEqual(4, ecpool:pick_and_do({Pool, <<"abc">>}, Action, no_handover)),
     ecpool:stop_sup_pool(Pool).
+
+%% Smoke tests for `ecpool:check_pool_integrity`, which should report an error when worker
+%% supervisor is down.
+t_check_pool_integrity(_TCConfig) ->
+    Pool = ?FUNCTION_NAME,
+    Opts1 = [ {pool_size, 15}
+            , {pool_type, hash}
+            , {auto_reconnect, false}
+            ],
+    {ok, _} = ecpool:start_sup_pool(Pool, test_client, Opts1),
+    ?assertEqual(ok, ecpool:check_pool_integrity(Pool)),
+    ok = ecpool:stop_sup_pool(Pool),
+    Opts2 = [ {crash_after, 1}
+            , {auto_reconnect, true}
+            | Opts1
+            ],
+    {ok, _} = ecpool:start_sup_pool(Pool, test_client, Opts2),
+    %% Give it some time to reach maximum restart intensity
+    ct:sleep(100),
+    ?assertEqual({error, {processes_down, [worker_sup]}}, ecpool:check_pool_integrity(Pool)),
+    ok = ecpool:stop_sup_pool(Pool),
+    ?assertEqual({error, not_found}, ecpool:check_pool_integrity(Pool)),
+    ok.

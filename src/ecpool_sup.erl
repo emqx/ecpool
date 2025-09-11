@@ -24,6 +24,7 @@
 -export([ start_pool/3
         , stop_pool/1
         , get_pool/1
+        , check_pool_integrity/1
         ]).
 
 -export([pools/0]).
@@ -67,6 +68,16 @@ get_pool(Pool) ->
         L  -> hd(L)
     end.
 
+-spec check_pool_integrity(pool_name) ->
+    ok | {error, {processes_down, [term()]} | not_found}.
+check_pool_integrity(Pool) ->
+    case get_pool(Pool) of
+        undefined ->
+            {error, not_found};
+        SupPid when is_pid(SupPid) ->
+            do_check_pool_integrity_root(SupPid)
+    end.
+
 %% @doc Get All Pools supervisored by the ecpool_sup.
 -spec(pools() -> [{pool_name(), pid()}]).
 pools() ->
@@ -91,3 +102,26 @@ pool_spec(Pool, Mod, Opts) ->
       modules => [ecpool_pool_sup]}.
 
 child_id(Pool) -> {pool_sup, Pool}.
+
+%%--------------------------------------------------------------------
+%% Internal fns
+%%--------------------------------------------------------------------
+
+do_check_pool_integrity_root(SupPid) ->
+    try supervisor:which_children(SupPid) of
+        Children ->
+            %% We ignore `restarting` here because those processes are still being
+            %% managed.
+            DeadChildren = [Id || {Id, undefined, _, _} <- Children],
+            %% Currently, at root, we only have one supervisor: `ecpool_worker_sup`, and
+            %% it does not contain other supervisors under it, so no need to dig deeper.
+            case DeadChildren of
+                [_ | _] ->
+                    {error, {processes_down, DeadChildren}};
+                [] ->
+                    ok
+            end
+    catch
+        exit:{noproc, _} ->
+            {error, {processes_down, [root]}}
+    end.
