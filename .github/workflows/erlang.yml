@@ -18,6 +18,7 @@ jobs:
           - otp_release: 24
           - otp_release: 25
           - otp_release: 26
+          - otp_release: 27
 
     steps:
     - uses: actions/checkout@v2
