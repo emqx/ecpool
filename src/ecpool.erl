@@ -113,7 +113,7 @@ stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
 
 -spec check_pool_integrity(pool_name()) ->
-    ok | {error, {processes_down, [term()]} | not_found}.
+    ok | {error, {processes_down, [root | pool | worker_sup]} | not_found}.
 check_pool_integrity(Pool) ->
     ecpool_sup:check_pool_integrity(Pool).
 
