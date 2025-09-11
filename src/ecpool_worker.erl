@@ -356,10 +356,14 @@ safe_exec({_M, _F, _A} = Action, MainArg) ->
         logger:error("[PoolWorker] safe_exec ~p, failed: ~0p", [Action, {E,R,ST}]),
         {error, {exec_failed, E, R}}
     end;
-
-%% for backward compatibility upgrading from version =< 4.2.1
 safe_exec(Action, MainArg) when is_function(Action) ->
-    Action(MainArg).
+    try
+        Action(MainArg)
+    catch
+        E:R:ST ->
+            logger:error("[PoolWorker] safe_exec ~p, failed: ~0p", [Action, {E,R,ST}]),
+            {error, {exec_failed, E, R}}
+    end.
 
 exec({M, F, A}, MainArg) ->
     erlang:apply(M, F, [MainArg]++A).
