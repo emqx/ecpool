@@ -68,7 +68,7 @@ get_pool(Pool) ->
         L  -> hd(L)
     end.
 
--spec check_pool_integrity(pool_name) ->
+-spec check_pool_integrity(pool_name()) ->
     ok | {error, {processes_down, [term()]} | not_found}.
 check_pool_integrity(Pool) ->
     case get_pool(Pool) of

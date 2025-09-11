@@ -27,15 +27,15 @@
 start_link(Pool, Mod, Opts) ->
     supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
 
-init([Pool, Mod, Opts]) ->
+init([PoolName, Mod, Opts]) ->
     SupFlags = #{
         strategy => one_for_all,
         intensity => 10,
         period => 100
     },
-    PoolWorker = #{
+    Pool = #{
         id => pool,
-        start => {ecpool_pool, start_link, [Pool, Opts]},
+        start => {ecpool_pool, start_link, [PoolName, Opts]},
         restart => transient,
         shutdown => 16#ffff,
         type => worker,
@@ -43,10 +43,10 @@ init([Pool, Mod, Opts]) ->
     },
     WorkerSup = #{
         id => worker_sup,
-        start => {ecpool_worker_sup,start_link, [Pool, Mod, Opts]},
+        start => {ecpool_worker_sup,start_link, [PoolName, Mod, Opts]},
         restart => transient,
         shutdown => infinity,
         type => supervisor,
         modules => [ecpool_worker_sup]
     },
-    {ok, {SupFlags, [PoolWorker, WorkerSup]}}.
+    {ok, {SupFlags, [Pool, WorkerSup]}}.
