@@ -82,7 +82,8 @@ groups() ->
        t_multiprocess_client,
        t_multiprocess_client_not_restart,
        t_pick_and_do_fun,
-       t_check_pool_integrity
+       t_check_pool_integrity,
+       t_big_pool_dies_and_recovers
       ]}].
 
 init_per_suite(Config) ->
@@ -373,4 +374,23 @@ t_check_pool_integrity(_TCConfig) ->
     ?assertEqual({error, {processes_down, [worker_sup]}}, ecpool:check_pool_integrity(Pool)),
     ok = ecpool:stop_sup_pool(Pool),
     ?assertEqual({error, not_found}, ecpool:check_pool_integrity(Pool)),
+    ok.
+
+%% Previously, we had a fixed restart intensity for the worker supervisor, meaning that if
+%% a large pool dies once, it brings down the supervisor.  This checks that we have an
+%% intensity proportional to the pool size, so the whole pool may restart at once without
+%% bringing the supervisor down.
+t_big_pool_dies_and_recovers(_TCConfig) ->
+    Pool = ?FUNCTION_NAME,
+    Opts = [ {pool_size, 50}
+           , {pool_type, hash}
+           , {auto_reconnect, false}
+           ],
+    {ok, _} = ecpool:start_sup_pool(Pool, test_client, Opts),
+    %% Kill all workers at once.
+    Workers = ecpool:workers(Pool),
+    lists:foreach(fun({_Id, Pid}) -> exit(Pid, kill) end, Workers),
+    ct:sleep(100),
+    ?assertEqual(ok, ecpool:check_pool_integrity(Pool)),
+    ok = ecpool:stop_sup_pool(Pool),
     ok.
