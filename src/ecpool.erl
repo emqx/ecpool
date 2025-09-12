@@ -20,6 +20,7 @@
         , start_pool/3
         , start_sup_pool/3
         , stop_sup_pool/1
+        , check_pool_integrity/1
         , get_client/1
         , get_client/2
         , pick_and_do/3
@@ -110,6 +111,11 @@ start_sup_pool(Pool, Mod, Opts) ->
 %% @doc Stop the pool supervised by ecpool_sup
 stop_sup_pool(Pool) ->
     ecpool_sup:stop_pool(Pool).
+
+-spec check_pool_integrity(pool_name()) ->
+    ok | {error, {processes_down, [root | pool | worker_sup]} | not_found}.
+check_pool_integrity(Pool) ->
+    ecpool_sup:check_pool_integrity(Pool).
 
 %% @doc Get client/connection
 -spec(get_client(pool_name()) -> get_client_ret()).

@@ -28,6 +28,13 @@ start_link(Pool, Mod, Opts) ->
     supervisor:start_link(?MODULE, [Pool, Mod, Opts]).
 
 init([Pool, Mod, Opts]) ->
+    PoolSize = pool_size(Opts),
+    SupFlags = #{
+        strategy => one_for_one,
+        %% Allow whole pool dying simultaneously at least once.
+        intensity => 10 + PoolSize,
+        period => 60
+    },
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
                        start => {ecpool_worker,
@@ -38,8 +45,8 @@ init([Pool, Mod, Opts]) ->
                        type => worker,
                        modules => [ecpool_worker, Mod]}
                  end,
-    Workers = [WorkerSpec(I) || I <- lists:seq(1, pool_size(Opts))],
-    {ok, { {one_for_one, 10, 60}, Workers} }.
+    Workers = [WorkerSpec(I) || I <- lists:seq(1, PoolSize)],
+    {ok, {SupFlags, Workers} }.
 
 pool_size(Opts) ->
     Schedulers = erlang:system_info(schedulers),
