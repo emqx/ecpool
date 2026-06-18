@@ -173,7 +173,7 @@ handle_continue(connect, State) ->
 handle_call(take_start_result, _From, State) ->
     {reply, ?take_start_result(), State};
 handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Client) ->
-    IsAlive = Client =/= undefined andalso is_process_alive(Client),
+    IsAlive = is_process_alive(Client),
     {reply, IsAlive, State};
 handle_call(is_connected, _From, State = #state{client = Client}) ->
     {reply, Client =/= undefined, State};
