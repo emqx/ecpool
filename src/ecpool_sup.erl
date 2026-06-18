@@ -96,7 +96,7 @@ pool_spec(Pool, Mod, Opts) ->
       start => {ecpool_pool_sup,
                 start_link,
                 [Pool, Mod, Opts]},
-      restart => transient,
+      restart => permanent,
       shutdown => infinity,
       type => supervisor,
       modules => [ecpool_pool_sup]}.
