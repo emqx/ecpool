@@ -66,6 +66,10 @@
     | {auto_reconnect, false | pos_integer()}
     | {on_reconnect, conn_callback()}
     | {on_disconnect, conn_callback()}
+      %% default: transient
+    | {worker_restart, transient | permanent | temporary}
+      %% default: 2_000
+    | {worker_shutdown, brutal_kill | timeout()}
     | tuple().
 -type get_client_ret() :: pid() | false | no_such_pool.
 -type start_error() :: no_worker_sup

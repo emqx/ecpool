@@ -36,7 +36,7 @@ init([PoolName, Mod, Opts]) ->
     Pool = #{
         id => pool,
         start => {ecpool_pool, start_link, [PoolName, Opts]},
-        restart => transient,
+        restart => permanent,
         shutdown => 16#ffff,
         type => worker,
         modules => [ecpool_pool]
@@ -44,7 +44,7 @@ init([PoolName, Mod, Opts]) ->
     WorkerSup = #{
         id => worker_sup,
         start => {ecpool_worker_sup,start_link, [PoolName, Mod, Opts]},
-        restart => transient,
+        restart => permanent,
         shutdown => infinity,
         type => supervisor,
         modules => [ecpool_worker_sup]

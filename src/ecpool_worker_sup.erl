@@ -35,13 +35,15 @@ init([Pool, Mod, Opts]) ->
         intensity => 10 + PoolSize,
         period => 60
     },
+    Restart = proplists:get_value(worker_restart, Opts, transient),
+    Shutdown = proplists:get_value(worker_shutdown, Opts, 2_000),
     WorkerSpec = fun(Id) ->
                      #{id => {worker, Id},
                        start => {ecpool_worker,
                                  start_link,
                                  [Pool, Id, Mod, Opts]},
-                       restart => transient,
-                       shutdown => 2_000,
+                       restart => Restart,
+                       shutdown => Shutdown,
                        type => worker,
                        modules => [ecpool_worker, Mod]}
                  end,
