@@ -188,8 +188,11 @@ handle_call(is_connected, _From, State = #state{client = Client}) ->
 handle_call(client, _From, State = #state{client = undefined}) ->
     LastError =
         case ?peek_connect_result() of
-            {error, Reason} ->
-                Reason;
+            #{ result := {error, Reason}
+             , time := RegisteredAt
+             } ->
+                SinceMS = now_ms() - RegisteredAt,
+                #{reason => Reason, time_since_observed_ms => SinceMS};
             _ ->
                 ?client_not_yet_started
         end,
@@ -236,7 +239,7 @@ handle_cast(_Msg, State) ->
 handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = SupPids}) ->
     case lists:member(Pid, SupPids) of
         true ->
-            ?set_connect_result({error, Reason}),
+            set_connect_result({error, Reason}),
             case proplists:get_value(auto_reconnect, Opts, false) of
                 false -> {stop, {shutdown, Reason}, erase_client(Pid, State)};
                 Secs -> reconnect(Secs, erase_client(Pid, State))
@@ -325,10 +328,10 @@ handle_disconnect(Client, OnDisconnectList) ->
 connect_internal(State0) ->
     case do_connect_internal(State0) of
         {ok, State} ->
-            ?set_connect_result(ok),
+            set_connect_result(ok),
             {ok, State};
         {error, Reason} ->
-            ?set_connect_result({error, Reason}),
+            set_connect_result({error, Reason}),
             {error, Reason}
     end.
 
@@ -473,3 +476,12 @@ monitor_child(Pid) ->
             %% that will be handled in shutdown/2.
             ok
     end.
+
+set_connect_result(Result) ->
+    Ctx = #{
+        result => Result,
+        time => now_ms()
+    },
+    ?set_connect_result(Ctx).
+
+now_ms() -> erlang:system_time(millisecond).

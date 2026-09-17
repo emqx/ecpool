@@ -390,7 +390,7 @@ t_client_dead_reason(_TCConfig) ->
             ct:fail("client didn't die")
     end,
     ?assertMatch(
-       {error, {disconnected, Reason}},
+       {error, {disconnected, #{reason := Reason, time_since_observed_ms := _}}},
        ecpool_worker:client(Worker)
       ),
     ok = ecpool:stop_sup_pool(Pool),
