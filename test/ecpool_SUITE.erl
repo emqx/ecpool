@@ -370,3 +370,28 @@ t_big_pool_dies_and_recovers(_TCConfig) ->
     ?assertEqual(ok, ecpool:check_pool_integrity(Pool)),
     ok = ecpool:stop_sup_pool(Pool),
     ok.
+
+t_client_dead_reason(_TCConfig) ->
+    Pool = ?FUNCTION_NAME,
+    Opts = [ {pool_size, 1}
+           , {pool_type, hash}
+           , {auto_reconnect, 2}
+           ],
+    {ok, _} = ecpool:start_sup_pool(Pool, test_client, Opts),
+    [Worker] = ecpool:workers(Pool),
+    {ok, Client} = ecpool_worker:client(Worker),
+    MRef = monitor(process, Client),
+    Reason = <<"this is how I died">>,
+    exit(Client, Reason),
+    receive
+        {'DOWN', MRef, _, _, _} ->
+            ok
+    after 1_000 ->
+            ct:fail("client didn't die")
+    end,
+    ?assertMatch(
+       {error, {disconnected, #{reason := Reason, time_since_observed_ms := _}}},
+       ecpool_worker:client(Worker)
+      ),
+    ok = ecpool:stop_sup_pool(Pool),
+    ok.
