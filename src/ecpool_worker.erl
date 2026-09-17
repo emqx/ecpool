@@ -60,8 +60,13 @@
          }).
 
 -type start_result() :: not_started | started | {start_failed, term()} | {exit, term()} | undefined.
+
+-define(client_not_yet_started, client_not_yet_started).
 -define(set_start_result(RESULT), erlang:put(start_result, RESULT)).
 -define(take_start_result(), erlang:erase(start_result)).
+
+-define(set_connect_result(RESULT), put(connect_result, RESULT)).
+-define(peek_connect_result(), get(connect_result)).
 
 %%--------------------------------------------------------------------
 %% Callback
@@ -82,7 +87,10 @@ start_link(Pool, Id, Mod, Opts) ->
 
 
 %% @doc Get client/connection.
--spec(client(pid()) -> {ok, Client :: pid()} | {ok, {Client :: pid(), pid()}} | {error, Reason :: term()}).
+-spec(client(pid()) ->
+    {ok, Client :: pid()}
+    | {ok, {Client :: pid(), pid()}}
+    | {error, {disconnected, Reason :: term()}}).
 client(Pid) ->
     gen_server:call(Pid, client, infinity).
 
@@ -178,7 +186,14 @@ handle_call(is_connected, _From, State = #state{client = Client}) when is_pid(Cl
 handle_call(is_connected, _From, State = #state{client = Client}) ->
     {reply, Client =/= undefined, State};
 handle_call(client, _From, State = #state{client = undefined}) ->
-    {reply, {error, disconnected}, State};
+    LastError =
+        case ?peek_connect_result() of
+            {error, Reason} ->
+                Reason;
+            _ ->
+                ?client_not_yet_started
+        end,
+    {reply, {error, {disconnected, LastError}}, State};
 handle_call(client, _From, State = #state{client = Client}) ->
     {reply, {ok, Client}, State};
 handle_call({exec, Action}, _From, State = #state{client = Client}) ->
@@ -221,6 +236,7 @@ handle_cast(_Msg, State) ->
 handle_info({'EXIT', Pid, Reason}, State = #state{opts = Opts, supervisees = SupPids}) ->
     case lists:member(Pid, SupPids) of
         true ->
+            ?set_connect_result({error, Reason}),
             case proplists:get_value(auto_reconnect, Opts, false) of
                 false -> {stop, {shutdown, Reason}, erase_client(Pid, State)};
                 Secs -> reconnect(Secs, erase_client(Pid, State))
@@ -306,7 +322,17 @@ handle_disconnect(Client, OnDisconnectList) ->
     lists:foreach(fun(OnDisconnectCallback) -> with_client(OnDisconnectCallback, Client) end,
                   OnDisconnectList).
 
-connect_internal(State) ->
+connect_internal(State0) ->
+    case do_connect_internal(State0) of
+        {ok, State} ->
+            ?set_connect_result(ok),
+            {ok, State};
+        {error, Reason} ->
+            ?set_connect_result({error, Reason}),
+            {error, Reason}
+    end.
+
+do_connect_internal(State) ->
     try connect(State) of
         {ok, Client} when is_pid(Client) ->
             erlang:link(Client),
